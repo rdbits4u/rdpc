@@ -4,8 +4,8 @@ const nsparse = @import("parse.zig");
 const nsrdpc_msg = @import("rdpc_msg.zig");
 const c = @cImport(
 {
-    @cInclude("librdpc_gcc.h");
-    @cInclude("librdpc_constants.h");
+    @cInclude("rdp_gcc.h");
+    @cInclude("rdp_constants.h");
     @cInclude("librdpc.h");
 });
 

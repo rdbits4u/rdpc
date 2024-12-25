@@ -15,5 +15,8 @@ pub fn build(b: *std.Build) void
     librdpc.linkLibC();
     librdpc.addIncludePath(b.path("../common"));
     librdpc.addIncludePath(b.path("include"));
+    librdpc.root_module.addImport("parse", b.createModule(.{
+        .root_source_file = b.path("../common/parse.zig"),
+    }));
     b.installArtifact(librdpc);
 }

@@ -1,11 +1,8 @@
-
 const std = @import("std");
-const nsrdpc_priv = @import("rdpc_priv.zig");
-const nsparse = @import("parse.zig");
+const parse = @import("parse");
+const rdpc_priv = @import("rdpc_priv.zig");
 const c = @cImport(
 {
-    @cInclude("rdp_gcc.h");
-    @cInclude("rdp_constants.h");
     @cInclude("librdpc.h");
 });
 
@@ -15,18 +12,18 @@ pub const rdpc_msg_t = struct
     i1: i32 = 1,
     i2: i32 = 2,
     i3: i32 = 3,
-    rdpc_priv: *nsrdpc_priv.rdpc_priv_t = undefined,
+    priv: *rdpc_priv.rdpc_priv_t = undefined,
 
     //*************************************************************************
-    pub fn delete(rdpc_msg: *rdpc_msg_t) void
+    pub fn delete(self: *rdpc_msg_t) void
     {
-        rdpc_msg.allocator.destroy(rdpc_msg);
+        self.allocator.destroy(self);
     }
 
     //*************************************************************************
-    pub fn connection_request(rdpc_msg: *rdpc_msg_t, s: *nsparse.parse_t) bool
+    pub fn connection_request(self: *rdpc_msg_t, s: *parse.parse_t) bool
     {
-        _ = rdpc_msg;
+        _ = self;
         if (!s.check_rem(19))
         //if (!s.check_rem(1))
         {
@@ -56,9 +53,9 @@ pub const rdpc_msg_t = struct
     }
 
     //*************************************************************************
-    pub fn connection_confirm(rdpc_msg: *rdpc_msg_t, s: *nsparse.parse_t) bool
+    pub fn connection_confirm(self: *rdpc_msg_t, s: *parse.parse_t) bool
     {
-        _ = rdpc_msg;
+        _ = self;
         if (!s.check_rem(6))
         {
             return false;
@@ -73,14 +70,14 @@ pub const rdpc_msg_t = struct
     }
 
     //*************************************************************************
-    pub fn conference_create_request(rdpc_msg: *rdpc_msg_t,
-            s: *nsparse.parse_t) bool
+    pub fn conference_create_request(self: *rdpc_msg_t,
+            s: *parse.parse_t) bool
     {
-        const gccs = nsparse.create(rdpc_msg.allocator, 1024) catch
+        const gccs = parse.create(self.allocator, 1024) catch
             return false;
         defer gccs.delete();
 
-        if (!gcc_out_data(rdpc_msg, gccs))
+        if (!gcc_out_data(self, gccs))
         {
             return false;
         }
@@ -145,17 +142,17 @@ pub const rdpc_msg_t = struct
 
 //*****************************************************************************
 pub fn create(allocator: *const std.mem.Allocator,
-        rdpc_priv: *nsrdpc_priv.rdpc_priv_t) !*rdpc_msg_t
+        priv: *rdpc_priv.rdpc_priv_t) !*rdpc_msg_t
 {
-    const rdpc_msg: *rdpc_msg_t = try allocator.create(rdpc_msg_t);
-    rdpc_msg.* = .{};
-    rdpc_msg.rdpc_priv = rdpc_priv;
-    rdpc_msg.allocator = allocator;
-    return rdpc_msg;
+    const msg: *rdpc_msg_t = try allocator.create(rdpc_msg_t);
+    msg.* = .{};
+    msg.priv = priv;
+    msg.allocator = allocator;
+    return msg;
 }
 
 //*****************************************************************************
-fn ber_out_header(s: *nsparse.parse_t, tagval: u16, length: u16) void
+fn ber_out_header(s: *parse.parse_t, tagval: u16, length: u16) void
 {
     if (tagval > 0xFF)
     {
@@ -177,14 +174,14 @@ fn ber_out_header(s: *nsparse.parse_t, tagval: u16, length: u16) void
 }
 
 //*****************************************************************************
-fn ber_out_integer(s: *nsparse.parse_t, val: u16) void
+fn ber_out_integer(s: *parse.parse_t, val: u16) void
 {
     ber_out_header(s, c.BER_TAG_INTEGER, 2);
     s.out_u16_be(val);
 }
 
 //*****************************************************************************
-fn iso_out_data_header(s: *nsparse.parse_t, length: u16) void
+fn iso_out_data_header(s: *parse.parse_t, length: u16) void
 {
     s.out_u8(3);            //version
     s.out_u8(0);            // reserved
@@ -194,7 +191,7 @@ fn iso_out_data_header(s: *nsparse.parse_t, length: u16) void
     s.out_u8(0x80);         // eot
 }
 
-fn mcs_out_domain_params(s: *nsparse.parse_t, max_channels: u16,
+fn mcs_out_domain_params(s: *parse.parse_t, max_channels: u16,
         max_users: u16, max_tokens: u16, max_pdusize: u16) void
 {
     ber_out_header(s, c.MCS_TAG_DOMAIN_PARAMS, 32);
@@ -208,7 +205,7 @@ fn mcs_out_domain_params(s: *nsparse.parse_t, max_channels: u16,
     ber_out_integer(s, 2);              // ver_protocol
 }
 
-fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *nsparse.parse_t) bool
+fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) bool
 {
     if (!s.check_rem(512))
     {
@@ -232,7 +229,7 @@ fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *nsparse.parse_t) bool
     s.out_u16_be(0x6361); // ca
     s.out_u16_be(0x811c);
 
-    const rdpc = &rdpc_msg.rdpc_priv.rdpc;
+    const rdpc = &rdpc_msg.priv.rdpc;
 
     // CS_CORE
     s.push_layer(4, 1);

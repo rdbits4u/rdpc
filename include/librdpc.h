@@ -2,6 +2,9 @@
 #if !defined(_LIBRDPC_H)
 #define _LIBRDPC_H
 
+#include <rdp_gcc.h>
+#include <rdp_constants.h>
+
 #define LIBRDPC_ERROR_NONE                  0
 #define LIBRDPC_ERROR_MEMORY                1
 #define LIBRDPC_ERROR_NEED_MORE             2
@@ -28,6 +31,7 @@ struct rdpc_t
 typedef struct rdpc_t rdpc_t;
 
 int rdpc_init(void);
+int rdpc_deinit(void);
 int rdpc_create(rdpc_settings_t* settings, rdpc_t** rdpc);
 int rdpc_delete(rdpc_t* rdpc);
 int rdpc_start(rdpc_t* rdpc);

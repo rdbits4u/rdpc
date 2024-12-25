@@ -1,11 +1,7 @@
-
 const std = @import("std");
-const nsrdpc_priv = @import("rdpc_priv.zig");
-const nsparse = @import("parse.zig");
+const rdpc_priv = @import("rdpc_priv.zig");
 const c = @cImport(
 {
-    @cInclude("rdp_gcc.h");
-    @cInclude("rdp_constants.h");
     @cInclude("librdpc.h");
 });
 
@@ -19,22 +15,29 @@ export fn rdpc_init() c_int
 }
 
 //*****************************************************************************
+// int rdpc_init(void);
+export fn rdpc_deinit() c_int
+{
+    return c.LIBRDPC_ERROR_NONE;
+}
+
+//*****************************************************************************
 // int rdpc_create(rdpc_settings_t* settings, rdpc_t** rdpc);
 export fn rdpc_create(settings: ?*c.rdpc_settings_t, rdpc: ?**c.rdpc_t) c_int
 {
 
     if (rdpc) |ardpc|
     {
-        const rdpc_priv = nsrdpc_priv.create(&g_allocator) catch
+        const priv = rdpc_priv.create(&g_allocator) catch
             return c.LIBRDPC_ERROR_MEMORY;
-        init_defaults(rdpc_priv);
+        init_defaults(priv);
         // check if settings is nil
         if (settings) |asettings|
         {
-            rdpc_priv.rdpc.i1 = asettings.i1;
-            rdpc_priv.rdpc.i2 = asettings.i2;
+            priv.rdpc.i1 = asettings.i1;
+            priv.rdpc.i2 = asettings.i2;
         }
-        ardpc.* = @ptrCast(rdpc_priv);
+        ardpc.* = @ptrCast(priv);
         return c.LIBRDPC_ERROR_NONE;
     }
     return c.LIBRDPC_ERROR_PARSE;
@@ -47,9 +50,9 @@ export fn rdpc_delete(rdpc: ?*c.rdpc_t) c_int
     // check if rdpc is nil
     if (rdpc) |ardpc|
     {
-        // cast c.rdpc_t to nsrdpc_priv.rdpc_priv_t
-        const rdpc_priv: *nsrdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
-        rdpc_priv.delete();
+        // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+        const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+        priv.delete();
     }
     return c.LIBRDPC_ERROR_NONE;
 }
@@ -61,9 +64,9 @@ export fn rdpc_start(rdpc: ?*c.rdpc_t) c_int
     // check if rdpc is nil
     if (rdpc) |ardpc|
     {
-        // cast c.rdpc_t to nsrdpc_priv.rdpc_priv_t
-        const rdpc_priv: *nsrdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
-        return rdpc_priv.start();
+        // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+        const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+        return priv.start();
     }
     return c.LIBRDPC_ERROR_PARSE;
 }
@@ -81,12 +84,12 @@ export fn rdpc_process_server_data(rdpc: ?*c.rdpc_t,
         // check if data is nil
         if (data) |adata|
         {
-            // cast c.rdpc_t to nsrdpc_priv.rdpc_priv_t
-            const rdpc_priv: *nsrdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+            // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+            const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
             var slice: []u8 = undefined;
             slice.ptr = @ptrCast(adata);
             slice.len = @intCast(bytes);
-            const rv: c_int = rdpc_priv.process_server_data(slice,
+            const rv: c_int = priv.process_server_slice_data(slice,
                     bytes_processed);
             return rv;
         }
@@ -95,9 +98,9 @@ export fn rdpc_process_server_data(rdpc: ?*c.rdpc_t,
 }
 
 //*****************************************************************************
-fn init_defaults(rdpc_priv: *nsrdpc_priv.rdpc_priv_t) void
+fn init_defaults(priv: *rdpc_priv.rdpc_priv_t) void
 {
-    const rdpc = &rdpc_priv.rdpc;
+    const rdpc = &priv.rdpc;
     const core = &rdpc.cgcc.core;
     const sec = &rdpc.cgcc.sec;
     const net = &rdpc.cgcc.net;

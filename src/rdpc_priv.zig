@@ -6,6 +6,13 @@ const c = @cImport(
     @cInclude("librdpc.h");
 });
 
+// sub struct for assigning functions
+const rdpc_priv_sub_t = struct
+{
+    state_fn: *const fn (self: *rdpc_priv_t, slice: []u8) c_int =
+            rdpc_priv_t.state_defalt_fn,
+};
+
 // c abi struct
 pub const rdpc_priv_t = extern struct
 {
@@ -13,14 +20,14 @@ pub const rdpc_priv_t = extern struct
     allocator: *const std.mem.Allocator = undefined,
     i1: i32 = 0,
     i2: i32 = 0,
-    state: i32 = 0,
-    pad0: i32 = 0,
     msg: *rdpc_msg.rdpc_msg_t = undefined,
+    sub: *rdpc_priv_sub_t = undefined,
 
     //*************************************************************************
     pub fn delete(self: *rdpc_priv_t) void
     {
         self.msg.delete();
+        self.allocator.destroy(self.sub);
         self.allocator.destroy(self);
     }
 
@@ -31,25 +38,11 @@ pub const rdpc_priv_t = extern struct
         // check if function is assigned
         if (self.rdpc.log_msg) |alog_msg|
         {
-            const alloc_buf = std.fmt.allocPrint(self.allocator.*,
+            const alloc_buf = std.fmt.allocPrintZ(self.allocator.*,
                     fmt, args) catch
                 return c.LIBRDPC_ERROR_MEMORY;
             defer self.allocator.free(alloc_buf);
-            // alloc for copy
-            const lmsg: []u8 = self.allocator.alloc(u8,
-                    alloc_buf.len + 1) catch
-                return c.LIBRDPC_ERROR_MEMORY;
-            defer self.allocator.free(lmsg);
-            // make a copy
-            var index: usize = 0;
-            for (alloc_buf) |byte|
-            {
-                lmsg[index] = byte;
-                index += 1;
-            }
-            lmsg[index] = 0; // set nil at end
-            // call the c callback
-            return alog_msg(&self.rdpc, lmsg.ptr);
+            return alog_msg(&self.rdpc, alloc_buf.ptr);
         }
         return c.LIBRDPC_ERROR_PARSE;
     }
@@ -75,7 +68,7 @@ pub const rdpc_priv_t = extern struct
         const outs = parse.create(self.allocator, 1024) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer outs.delete();
-        self.state = 0;
+        self.sub.state_fn = rdpc_priv_t.state0_fn;
         if (!self.msg.connection_request(outs))
         {
             return c.LIBRDPC_ERROR_PARSE;
@@ -134,34 +127,55 @@ pub const rdpc_priv_t = extern struct
         {
             abytes_processed.* = len;
         }
-        if (self.state == 0)
+        return self.sub.state_fn(self, slice[0..len]);
+    }
+
+    //*************************************************************************
+    fn state_defalt_fn(self: *rdpc_priv_t, slice: []u8) c_int
+    {
+        _ = slice;
+        _ = self.log_msg("rdpc_priv_t::state_defalt_fn:", .{});
+        return c.LIBRDPC_ERROR_PARSE;
+    }
+
+    //*************************************************************************
+    fn state0_fn(self: *rdpc_priv_t, slice: []u8) c_int
+    {
+        _ = self.log_msg("rdpc_priv_t::state0_fn:", .{});
+        // code block for defer
         {
-            const sub_slice = slice[0..len];
-            // code block for defer
-            {
-                const ins = parse.create_from_slice(self.allocator,
-                        sub_slice) catch
-                    return c.LIBRDPC_ERROR_MEMORY;
-                defer ins.delete();
-                if (!self.msg.connection_confirm(ins))
-                {
-                    return c.LIBRDPC_ERROR_PARSE;
-                }
-            }
-            const outs = parse.create(self.allocator, 8192) catch
+            const ins = parse.create_from_slice(self.allocator, slice) catch
                 return c.LIBRDPC_ERROR_MEMORY;
-            defer outs.delete();
-            self.state = 1;
-            if (!self.msg.conference_create_request(outs))
+            defer ins.delete();
+            if (!self.msg.connection_confirm(ins))
             {
                 return c.LIBRDPC_ERROR_PARSE;
             }
-            return self.send_slice_to_server(outs.get_out_slice());
         }
-        else
+        const outs = parse.create(self.allocator, 8192) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer outs.delete();
+        if (!self.msg.conference_create_request(outs))
         {
-            _ = self.log_msg("rdpc_priv_t::process_server_slice_data: unknown state {}",
-                    .{self.state});
+            return c.LIBRDPC_ERROR_PARSE;
+        }
+        const rv = self.send_slice_to_server(outs.get_out_slice());
+        if (rv == c.LIBRDPC_ERROR_NONE)
+        {
+            self.sub.state_fn = rdpc_priv_t.state1_fn;
+        }
+        return rv;
+    }
+
+    //*************************************************************************
+    fn state1_fn(self: *rdpc_priv_t, slice: []u8) c_int
+    {
+        _ = self.log_msg("rdpc_priv_t::state1_fn:", .{});
+        // code block for defer
+        {
+            const ins = parse.create_from_slice(self.allocator, slice) catch
+                return c.LIBRDPC_ERROR_MEMORY;
+            defer ins.delete();
         }
         return c.LIBRDPC_ERROR_NONE;
     }
@@ -175,6 +189,9 @@ pub fn create(allocator: *const std.mem.Allocator) !*rdpc_priv_t
     errdefer allocator.destroy(priv);
     priv.* = .{};
     priv.allocator = allocator;
+    priv.sub = try allocator.create(rdpc_priv_sub_t);
+    errdefer allocator.destroy(priv.sub);
+    priv.sub.* = .{};
     priv.msg = try rdpc_msg.create(allocator, priv);
     return priv;
 }

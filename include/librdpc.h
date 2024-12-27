@@ -21,6 +21,7 @@ struct rdpc_t
 {
     int i1;
     int i2;
+    // function calls this library makes, assigned by application
     int (*test1)(void);
     int (*log_msg)(struct rdpc_t* rdpc, const char* msg);
     int (*send_to_server)(struct rdpc_t* rdpc, void* data, int bytes);
@@ -30,6 +31,7 @@ struct rdpc_t
 };
 typedef struct rdpc_t rdpc_t;
 
+// functions calls into this library
 int rdpc_init(void);
 int rdpc_deinit(void);
 int rdpc_create(rdpc_settings_t* settings, rdpc_t** rdpc);

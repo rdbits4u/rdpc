@@ -32,17 +32,21 @@ pub const rdpc_priv_t = extern struct
     }
 
     //*************************************************************************
-    pub fn log_msg(self: *rdpc_priv_t, comptime fmt: []const u8,
-            args: anytype) c_int
+    pub fn logln(self: *rdpc_priv_t, src: std.builtin.SourceLocation,
+            comptime fmt: []const u8, args: anytype) c_int
     {
         // check if function is assigned
         if (self.rdpc.log_msg) |alog_msg|
         {
-            const alloc_buf = std.fmt.allocPrintZ(self.allocator.*,
+            const alloc_buf = std.fmt.allocPrint(self.allocator.*,
                     fmt, args) catch
                 return c.LIBRDPC_ERROR_MEMORY;
             defer self.allocator.free(alloc_buf);
-            return alog_msg(&self.rdpc, alloc_buf.ptr);
+            const alloc1_buf = std.fmt.allocPrintZ(self.allocator.*,
+                    "{s}:{s}", .{src.fn_name, alloc_buf}) catch
+                return c.LIBRDPC_ERROR_MEMORY;
+            defer self.allocator.free(alloc1_buf);
+            return alog_msg(&self.rdpc, alloc1_buf.ptr);
         }
         return c.LIBRDPC_ERROR_PARSE;
     }
@@ -64,7 +68,7 @@ pub const rdpc_priv_t = extern struct
     /// this starts the back and forth connection process
     pub fn start(self: *rdpc_priv_t) c_int
     {
-        _ = self.log_msg("rdpc_priv_t::start:", .{});
+        _ = self.logln(@src(), "", .{});
         const outs = parse.create(self.allocator, 1024) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer outs.delete();
@@ -80,8 +84,7 @@ pub const rdpc_priv_t = extern struct
     pub fn process_server_slice_data(self: *rdpc_priv_t, slice: []u8,
             bytes_processed: ?*c_int) c_int
     {
-        _ = self.log_msg("rdpc_priv_t::process_server_slice_data: bytes {}",
-                .{slice.len});
+        _ = self.logln(@src(), "bytes {}", .{slice.len});
         var len: u16 = 0;
         if (slice.len < 2)
         {
@@ -134,14 +137,14 @@ pub const rdpc_priv_t = extern struct
     fn state_defalt_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
         _ = slice;
-        _ = self.log_msg("rdpc_priv_t::state_defalt_fn:", .{});
+        _ = self.logln(@src(), "", .{});
         return c.LIBRDPC_ERROR_PARSE;
     }
 
     //*************************************************************************
     fn state0_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
-        _ = self.log_msg("rdpc_priv_t::state0_fn:", .{});
+        _ = self.logln(@src(), "", .{});
         // code block for defer
         {
             const ins = parse.create_from_slice(self.allocator, slice) catch
@@ -170,7 +173,7 @@ pub const rdpc_priv_t = extern struct
     //*************************************************************************
     fn state1_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
-        _ = self.log_msg("rdpc_priv_t::state1_fn:", .{});
+        _ = self.logln(@src(), "", .{});
         // code block for defer
         {
             const ins = parse.create_from_slice(self.allocator, slice) catch

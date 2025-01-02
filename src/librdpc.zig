@@ -119,7 +119,7 @@ fn init_defaults(priv: *rdpc_priv.rdpc_priv_t) void
     // CS_SEC
     sec.header.type = c.CS_SECURITY;        // 0xC002;
     sec.header.length = 0;                  // calculated
-    sec.encryptionMethods = c.CRYPT_METHOD_40BIT;
+    sec.encryptionMethods = c.CRYPT_METHOD_NONE;
     sec.extEncryptionMethods = 0;
 
     // CS_NET

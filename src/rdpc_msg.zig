@@ -21,15 +21,13 @@ pub const rdpc_msg_t = struct
     }
 
     //*************************************************************************
-    pub fn connection_request(self: *rdpc_msg_t, s: *parse.parse_t) bool
+    // X.224 Connection Request PDU
+    // out
+    pub fn connection_request(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
     {
         _ = self;
-        if (!s.check_rem(19))
-        //if (!s.check_rem(1))
-        {
-            return false;
-        }
-        // X.224 Connection Request PDU
+        try s.check_rem(19);
         s.push_layer(5, 0);
         s.out_u8(c.ISO_PDU_CR); // Connection Request - 0xE0
         s.out_u8_skip(2); // dst_ref
@@ -49,93 +47,181 @@ pub const rdpc_msg_t = struct
         s.out_u16_be(bytes); // set PDU size
         s.out_u8(li); // LI (length indicator)
         s.pop_layer(1); // go back to end
-        return true;
     }
 
     //*************************************************************************
-    pub fn connection_confirm(self: *rdpc_msg_t, s: *parse.parse_t) bool
+    // X.224 Connection Confirm PDU
+    // in
+    pub fn connection_confirm(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
     {
         _ = self;
-        if (!s.check_rem(6))
-        {
-            return false;
-        }
+        try s.check_rem(6);
         s.in_u8_skip(5);
         const code = s.in_u8();
-        if (code != 0xD0) // Connection Confirm
+        if (code != c.ISO_PDU_CC) // Connection Confirm - 0xD0
         {
-            return false;
+            return error.BadTag;
         }
-        return true;
     }
 
     //*************************************************************************
+    // out
     pub fn conference_create_request(self: *rdpc_msg_t,
-            s: *parse.parse_t) bool
+            s: *parse.parse_t) !void
     {
-        const gccs = parse.create(self.allocator, 1024) catch
-            return false;
+        const gccs = try parse.create(self.allocator, 1024);
         defer gccs.delete();
-
-        if (!gcc_out_data(self, gccs))
-        {
-            return false;
-        }
-
+        try gcc_out_data(self, gccs);
         const gcc_slice = gccs.get_out_slice();
-
-        //if (!s.check_rem(7 + 5 + 5 + 1 + 5 + 1 + 5 + 1))
-        if (!s.check_rem(1024))
-        {
-            return false;
-        }
+        try s.check_rem(7);
         s.push_layer(7, 0);
-
         s.push_layer(0, 1);
-        ber_out_header(s, c.MCS_CONNECT_INITIAL, 0x80); // update later
+        try ber_out_header(s, c.MCS_CONNECT_INITIAL, 0x80); // update later
         s.push_layer(0, 2);
-
-        ber_out_header(s, c.BER_TAG_OCTET_STRING, 1);
+        try ber_out_header(s, c.BER_TAG_OCTET_STRING, 1);
+        try s.check_rem(1);
         s.out_u8(1);
-
-        ber_out_header(s, c.BER_TAG_OCTET_STRING, 1);
+        try ber_out_header(s, c.BER_TAG_OCTET_STRING, 1);
+        try s.check_rem(1);
         s.out_u8(1);
-
-        ber_out_header(s, c.BER_TAG_BOOLEAN, 1);
+        try ber_out_header(s, c.BER_TAG_BOOLEAN, 1);
+        try s.check_rem(1);
         s.out_u8(0xFF);
-
         // target params: see table in section 3.2.5.3.3 in RDPBCGR
-        mcs_out_domain_params(s, 34, 2, 0, 0xffff);
-
+        try mcs_out_domain_params(s, 34, 2, 0, 0xffff);
         // min params: see table in section 3.2.5.3.3 in RDPBCGR
-        mcs_out_domain_params(s, 1, 1, 1, 0x420);
-
+        try mcs_out_domain_params(s, 1, 1, 1, 0x420);
         // max params: see table in section 3.2.5.3.3 in RDPBCGR
-        mcs_out_domain_params(s, 0xffff, 0xffff, 0xffff, 0xffff);
-
+        try mcs_out_domain_params(s, 0xffff, 0xffff, 0xffff, 0xffff);
         // insert gcc_data
         const gcc_bytes: u16 = @truncate(gcc_slice.len);
-        ber_out_header(s, c.BER_TAG_OCTET_STRING, gcc_bytes);
+        try ber_out_header(s, c.BER_TAG_OCTET_STRING, gcc_bytes);
+        try s.check_rem(gcc_slice.len);
         s.out_u8_slice(gcc_slice);
-
         s.push_layer(0, 3); // save end
-
         // update MCS_CONNECT_INITIAL
         const length_after = s.layer_subtract(3, 2);
         if (length_after < 0x80)
         {
             // length_after must be >= 0x80 or above space for
             // MCS_CONNECT_INITIAL will be wrong
-            return false;
+            return error.BadSize;
         }
         s.pop_layer(1);
-        ber_out_header(s, c.MCS_CONNECT_INITIAL, length_after);
-
+        try ber_out_header(s, c.MCS_CONNECT_INITIAL, length_after);
         s.pop_layer(0); // go to iso header
-        iso_out_data_header(s, s.layer_subtract(3, 0));
-
+        try iso_out_data_header(s, s.layer_subtract(3, 0));
         s.pop_layer(3); // go to end
-        return true;
+    }
+
+    //*************************************************************************
+    // in
+    pub fn conference_create_response(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self;
+        var length: u16 = undefined;
+        try iso_in_data_header(s, &length);
+        try ber_in_header(s, c.MCS_CONNECT_RESPONSE, &length);
+        try ber_in_header(s, c.BER_TAG_RESULT, &length);
+        const result = s.in_u8();
+        if (result != 0)
+        {
+            return error.BadResult;
+        }
+        try ber_in_header(s, c.BER_TAG_INTEGER, &length);
+        const remaining = s.in_u8();
+        try s.check_rem(remaining);
+        
+
+    }
+
+    //*************************************************************************
+    // out
+    pub fn erect_domain_request(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        const gccs = try parse.create(self.allocator, 1024);
+        defer gccs.delete();
+        try s.check_rem(1024);
+    }
+
+    //*************************************************************************
+    // out
+    pub fn attach_user_request(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        const gccs = try parse.create(self.allocator, 1024);
+        defer gccs.delete();
+        try s.check_rem(1024);
+    }
+
+    //*************************************************************************
+    // in
+    pub fn attach_user_confirm(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self;
+        try s.check_rem(6);
+    }
+
+    //*************************************************************************
+    // out
+    pub fn channel_join_request(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        const gccs = try parse.create(self.allocator, 1024);
+        defer gccs.delete();
+        try s.check_rem(1024);
+    }
+
+    //*************************************************************************
+    // in
+    pub fn channel_join_confirm(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self;
+        try s.check_rem(6);
+    }
+
+    //*************************************************************************
+    // out
+    pub fn security_exchange(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        const gccs = try parse.create(self.allocator, 1024);
+        defer gccs.delete();
+        try s.check_rem(1024);
+    }
+
+    //*************************************************************************
+    // out
+    pub fn client_info(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        const gccs = try parse.create(self.allocator, 1024);
+        defer gccs.delete();
+        try s.check_rem(1024);
+    }
+
+    //*************************************************************************
+    // in
+    pub fn auto_detect_request(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self;
+        try s.check_rem(6);
+    }
+
+    //*************************************************************************
+    // out
+    pub fn auto_detect_response(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        const gccs = try parse.create(self.allocator, 1024);
+        defer gccs.delete();
+        try s.check_rem(1024);
     }
 
 };
@@ -152,75 +238,148 @@ pub fn create(allocator: *const std.mem.Allocator,
 }
 
 //*****************************************************************************
-fn ber_out_header(s: *parse.parse_t, tagval: u16, length: u16) void
+fn ber_out_header(s: *parse.parse_t, tagval: u16, length: u16) !void
 {
     if (tagval > 0xFF)
     {
+        try s.check_rem(2);
         s.out_u16_be(tagval);
     }
     else
     {
+        try s.check_rem(1);
         s.out_u8(@truncate(tagval));
     }
     if (length >= 0x80)
     {
+        try s.check_rem(3);
         s.out_u8(0x82);
         s.out_u16_be(length);
     }
     else
     {
+        try s.check_rem(1);
         s.out_u8(@truncate(length));
     }
 }
 
 //*****************************************************************************
-fn ber_out_integer(s: *parse.parse_t, val: u16) void
+fn ber_in_header(s: *parse.parse_t, tagval: u16, length: *u16) !void
 {
-    ber_out_header(s, c.BER_TAG_INTEGER, 2);
+    var ltagval: u16 = undefined;
+    var llength: u16 = undefined;
+    if (tagval > 0xFF)
+    {
+        try s.check_rem(2);
+        ltagval = s.in_u16_be();
+    }
+    else
+    {
+        try s.check_rem(1);
+        ltagval = s.in_u8();
+    }
+    if (ltagval != tagval)
+    {
+        return error.BadTag;
+    }
+    try s.check_rem(1);
+    llength = s.in_u8();
+    if ((llength & 0x80) != 0)
+    {
+        if (llength == 0x82)
+        {
+            try s.check_rem(2);
+            length.* = s.in_u16_be();
+        }
+        else if (llength == 0x81)
+        {
+            try s.check_rem(1);
+            length.* = s.in_u8();
+        }
+        else
+        {
+            return error.BadParse;
+        }
+    }
+    else
+    {
+        length.* = llength;
+    }
+}
+
+//*****************************************************************************
+fn ber_out_integer(s: *parse.parse_t, val: u16) !void
+{
+    try ber_out_header(s, c.BER_TAG_INTEGER, 2);
+    try s.check_rem(2);
     s.out_u16_be(val);
 }
 
 //*****************************************************************************
-fn iso_out_data_header(s: *parse.parse_t, length: u16) void
+fn iso_out_data_header(s: *parse.parse_t, length: u16) !void
 {
-    s.out_u8(3);            //version
+    try s.check_rem(7);
+    s.out_u8(3);            // version
     s.out_u8(0);            // reserved
     s.out_u16_be(length);
     s.out_u8(2);            // hdrlen
-    s.out_u8(c.ISO_PDU_DT); // code - data
+    s.out_u8(c.ISO_PDU_DT); // code - data 0xF0
     s.out_u8(0x80);         // eot
 }
 
-fn mcs_out_domain_params(s: *parse.parse_t, max_channels: u16,
-        max_users: u16, max_tokens: u16, max_pdusize: u16) void
+//*****************************************************************************
+fn iso_in_data_header(s: *parse.parse_t, length: *u16) !void
 {
-    ber_out_header(s, c.MCS_TAG_DOMAIN_PARAMS, 32);
-    ber_out_integer(s, max_channels);
-    ber_out_integer(s, max_users);
-    ber_out_integer(s, max_tokens);
-    ber_out_integer(s, 1);              // num_priorities
-    ber_out_integer(s, 0);              // min_throughput
-    ber_out_integer(s, 1);              // max_height
-    ber_out_integer(s, max_pdusize);
-    ber_out_integer(s, 2);              // ver_protocol
+    try s.check_rem(7);
+    if (s.in_u8() != 3)             // version
+    {
+        return error.BadVersion;
+    }
+    s.in_u8_skip(1);                // reserved
+    const len = s.in_u16_be();
+    if (len < 7)
+    {
+        return error.BadLength;
+    }
+    s.in_u8_skip(1);                // hdrlen
+    if (s.in_u8() != c.ISO_PDU_DT)  // code - data 0xF0
+    {
+        return error.BadTag;
+    }
+    s.in_u8_skip(1);                // eot
+    length.* = len;
 }
 
-fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) bool
+//*****************************************************************************
+fn mcs_out_domain_params(s: *parse.parse_t, max_channels: u16,
+        max_users: u16, max_tokens: u16, max_pdusize: u16) !void
 {
-    if (!s.check_rem(512))
-    {
-        return false;
-    }
-    
+    try ber_out_header(s, c.MCS_TAG_DOMAIN_PARAMS, 32);
+    try ber_out_integer(s, max_channels);
+    try ber_out_integer(s, max_users);
+    try ber_out_integer(s, max_tokens);
+    try ber_out_integer(s, 1);          // num_priorities
+    try ber_out_integer(s, 0);          // min_throughput
+    try ber_out_integer(s, 1);          // max_height
+    try ber_out_integer(s, max_pdusize);
+    try ber_out_integer(s, 2);          // ver_protocol
+}
+
+//*****************************************************************************
+fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) !void
+{
     // Generic Conference Control (T.124) ConferenceCreateRequest
+    try s.check_rem(7);
     s.out_u16_be(5);
     s.out_u16_be(0x14);
     s.out_u8(0x7c);
     s.out_u16_be(1);
 
+    try s.check_rem(2);
     s.push_layer(2, 0);
 
     // PER encoded GCC conference create request PDU
+    try s.check_rem(14);
     s.out_u16_be(0x0008);
     s.out_u16_be(0x0010);
     s.out_u16_be(0x0001);
@@ -232,6 +391,9 @@ fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) bool
     const rdpc = &rdpc_msg.priv.rdpc;
 
     // CS_CORE
+    try s.check_rem(24 + rdpc.cgcc.core.clientName.len + 12 +
+            rdpc.cgcc.core.imeFileName.len + 14 +
+            rdpc.cgcc.core.clientDigProductId.len + 24);
     s.push_layer(4, 1);
     s.out_u32_le(rdpc.cgcc.core.version);
     s.out_u16_le(rdpc.cgcc.core.desktopWidth);
@@ -268,6 +430,7 @@ fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) bool
     s.pop_layer(2);
 
     // CS_SEC
+    try s.check_rem(12);
     s.push_layer(4, 1);
     s.out_u32_le(rdpc.cgcc.sec.encryptionMethods);
     s.out_u32_le(rdpc.cgcc.sec.extEncryptionMethods);
@@ -279,6 +442,7 @@ fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) bool
     s.pop_layer(2);
 
     // CS_NET
+    try s.check_rem(8 + rdpc.cgcc.net.channelCount * (8 + 4));
     s.push_layer(4, 1);
     s.out_u32_le(rdpc.cgcc.net.channelCount);
     var index: u32 = 0;
@@ -297,6 +461,7 @@ fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) bool
     s.pop_layer(2);
 
     // CS_CLUSTER
+    try s.check_rem(12);
     s.push_layer(4, 1);
     s.out_u32_le(rdpc.cgcc.cluster.Flags);
     s.out_u32_le(rdpc.cgcc.cluster.RedirectedSessionID);
@@ -310,6 +475,4 @@ fn gcc_out_data(rdpc_msg: *rdpc_msg_t, s: *parse.parse_t) bool
     s.pop_layer(0);
     s.out_u8_skip(2);
     s.pop_layer(2);
-
-    return true;
 }

@@ -120,20 +120,104 @@ pub const rdpc_msg_t = struct
     pub fn conference_create_response(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self;
         var length: u16 = undefined;
         try iso_in_data_header(s, &length);
         try ber_in_header(s, c.MCS_CONNECT_RESPONSE, &length);
         try ber_in_header(s, c.BER_TAG_RESULT, &length);
+        try s.check_rem(1);
         const result = s.in_u8();
         if (result != 0)
         {
             return error.BadResult;
         }
         try ber_in_header(s, c.BER_TAG_INTEGER, &length);
+        try s.check_rem(1);
         const remaining = s.in_u8();
         try s.check_rem(remaining);
-        
+
+        try mcs_in_domain_params(s);
+        try ber_in_header(s, c.BER_TAG_OCTET_STRING, &length);
+
+        try s.check_rem(21 + 1);
+        s.in_u8_skip(21);
+        length = s.in_u8();
+        std.debug.print("a len {X}\n", .{length});
+        if ((length & 0x80) != 0)
+        {
+            try s.check_rem(1);
+            length = (length << 8) | s.in_u8();
+            length = length & 0x7FFF;
+            std.debug.print("b len {X}\n", .{length});
+        }
+
+        var core = self.priv.rdpc.sgcc.core;
+        var sec = self.priv.rdpc.sgcc.sec;
+        var net = self.priv.rdpc.sgcc.net;
+        var msgchannel = self.priv.rdpc.sgcc.msgchannel;
+        var multitransport = self.priv.rdpc.sgcc.multitransport;
+        while (s.check_rem_bool(4))
+        {
+            s.push_layer(0, 0);
+            const tag = s.in_u16_le();
+            const tag_len = s.in_u16_le();
+            std.debug.print("tag 0x{X} len 0x{X}\n", .{tag, tag_len});
+            if (tag_len < 5)
+            {
+                return error.BadResult;
+            }
+            try s.check_rem(tag_len - 4);
+            const ls = try parse.create_from_slice(self.allocator,
+                    s.in_u8_slice(tag_len - 4));
+            switch (tag)
+            {
+                c.SC_CORE => // 0x0C01
+                {
+                    _ = self.priv.logln(@src(), "SC_CORE", .{});
+                    core.header.type = tag;
+                    core.header.length = tag_len;
+                    try ls.check_rem(8);
+                    core.clientRequestedProtocols = ls.in_u32_le();
+                    core.earlyCapabilityFlags = ls.in_u32_le();
+                },
+                c.SC_SECURITY => // 0xC02
+                {
+                    _ = self.priv.logln(@src(), "CS_SECURITY", .{});
+                    sec.header.type = tag;
+                    sec.header.length = tag_len;
+                    try ls.check_rem(8);
+                    sec.encryptionMethod = ls.in_u32_le();
+                    sec.encryptionLevel = ls.in_u32_le();
+                },
+                c.SC_NET => // 0xC03
+                {
+                    net.header.type = tag;
+                    net.header.length = tag_len;
+                    try ls.check_rem(4);
+                    net.MCSChannelId = ls.in_u16_le();
+                    net.channelCount = ls.in_u16_le();
+                    _ = self.priv.logln(@src(), "SC_NET channelCount {}", .{net.channelCount});
+                },
+                c.SC_MCS_MSGCHANNEL => // 0x0C04
+                {
+                    _ = self.priv.logln(@src(), "SC_MCS_MSGCHANNEL", .{});
+                    msgchannel.header.type = tag;
+                    msgchannel.header.length = tag_len;
+                },
+                c.SC_MULTITRANSPORT => // 0x0C08
+                {
+                    _ = self.priv.logln(@src(), "SC_MULTITRANSPORT", .{});
+                    multitransport.header.type = tag;
+                    multitransport.header.length = tag_len;
+                },
+                else =>
+                {
+                    _ = self.priv.logln(@src(), "unknown tag 0x{X}", .{tag});
+                }
+            }
+            ls.delete();
+            s.pop_layer(0);
+            s.in_u8_skip(tag_len);
+        }
 
     }
 
@@ -363,6 +447,15 @@ fn mcs_out_domain_params(s: *parse.parse_t, max_channels: u16,
     try ber_out_integer(s, 1);          // max_height
     try ber_out_integer(s, max_pdusize);
     try ber_out_integer(s, 2);          // ver_protocol
+}
+
+//*****************************************************************************
+fn mcs_in_domain_params(s: *parse.parse_t) !void
+{
+    var length: u16 = undefined;
+    try ber_in_header(s, c.MCS_TAG_DOMAIN_PARAMS, &length);
+    try s.check_rem(length);
+    s.in_u8_skip(length);
 }
 
 //*****************************************************************************

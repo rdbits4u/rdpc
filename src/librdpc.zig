@@ -25,19 +25,17 @@ export fn rdpc_deinit() c_int
 // int rdpc_create(rdpc_settings_t* settings, rdpc_t** rdpc);
 export fn rdpc_create(settings: ?*c.rdpc_settings_t, rdpc: ?**c.rdpc_t) c_int
 {
-
+    // check if rdpc is nil
     if (rdpc) |ardpc|
     {
-        const priv = rdpc_priv.create(&g_allocator) catch
-            return c.LIBRDPC_ERROR_MEMORY;
         // check if settings is nil
         if (settings) |asettings|
         {
-            priv.rdpc.i1 = asettings.i1;
-            priv.rdpc.i2 = asettings.i2;
+            const priv = rdpc_priv.create(&g_allocator, asettings) catch
+                return c.LIBRDPC_ERROR_MEMORY;
+            ardpc.* = @ptrCast(priv);
+            return c.LIBRDPC_ERROR_NONE;
         }
-        ardpc.* = @ptrCast(priv);
-        return c.LIBRDPC_ERROR_NONE;
     }
     return c.LIBRDPC_ERROR_PARSE;
 }
@@ -65,12 +63,10 @@ export fn rdpc_start(rdpc: ?*c.rdpc_t) c_int
     {
         // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
         const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
-        init_defaults(priv);
         return priv.start();
     }
     return c.LIBRDPC_ERROR_PARSE;
 }
-
 
 //*****************************************************************************
 // int rdpc_process_server_data(rdpc_t* rdpc, void* data, int bytes_in_buf,
@@ -95,47 +91,4 @@ export fn rdpc_process_server_data(rdpc: ?*c.rdpc_t,
         }
     }
     return c.LIBRDPC_ERROR_PARSE;
-}
-
-//*****************************************************************************
-fn init_defaults(priv: *rdpc_priv.rdpc_priv_t) void
-{
-    const rdpc = &priv.rdpc;
-    const core = &rdpc.cgcc.core;
-    const sec = &rdpc.cgcc.sec;
-    const net = &rdpc.cgcc.net;
-
-    _ = priv.logln(@src(), "", .{});
-    // CS_CORE
-    core.header.type = c.CS_CORE;           // 0xC001
-    core.header.length = 0;                 // calculated
-    core.version = 0x00080004;              // RDP 5.0, 5.1, 5.2, 6.0, 6.1, 7.0, 7.1, 8.0, and 8.1 clients
-    core.desktopWidth = 800;
-    core.desktopHeight = 600;
-    core.desktopPhysicalWidth = 400;
-    core.desktopPhysicalHeight = 300;
-    core.colorDepth = c.RNS_UD_COLOR_8BPP;  // 0xCA01 8 bits/pixel
-    core.SASSequence = c.RNS_UD_SAS_DEL;    // 0xAA03 secure access sequence
-    core.keyboardLayout = 0x0409;           // United States - English
-    core.clientBuild = 2600;
-    core.clientName[0] = 'P';
-    core.clientName[2] = 'C';
-    core.clientName[4] = '1';
-
-    // CS_SEC
-    sec.header.type = c.CS_SECURITY;        // 0xC002;
-    sec.header.length = 0;                  // calculated
-    sec.encryptionMethods = c.CRYPT_METHOD_NONE;
-    sec.extEncryptionMethods = 0;
-
-    // CS_NET
-    net.header.type = c.CS_NET;             // 0xC003
-    net.header.length = 0;                  // calculated
-    net.channelCount = 1;
-    net.channelDefArray[0].name[0] = 'J';
-    net.channelDefArray[0].name[1] = 'A';
-    net.channelDefArray[0].name[2] = 'Y';
-
-    // CS_CLUSTER
-
 }

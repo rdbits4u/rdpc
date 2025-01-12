@@ -17,6 +17,7 @@ const rdpc_priv_sub_t = struct
 pub const rdpc_priv_t = extern struct
 {
     rdpc: c.rdpc_t = .{},
+    settings: c.rdpc_settings_t = .{},
     allocator: *const std.mem.Allocator = undefined,
     msg: *rdpc_msg.rdpc_msg_t = undefined,
     sub: *rdpc_priv_sub_t = undefined,
@@ -401,7 +402,8 @@ pub const rdpc_priv_t = extern struct
 };
 
 //*****************************************************************************
-pub fn create(allocator: *const std.mem.Allocator) !*rdpc_priv_t
+pub fn create(allocator: *const std.mem.Allocator,
+        settings: *c.struct_rdpc_settings_t) !*rdpc_priv_t
 {
     const priv: *rdpc_priv_t = try allocator.create(rdpc_priv_t);
     errdefer allocator.destroy(priv);
@@ -412,5 +414,6 @@ pub fn create(allocator: *const std.mem.Allocator) !*rdpc_priv_t
     priv.sub.* = .{};
     priv.msg = try rdpc_msg.create(allocator, priv);
     // priv.msg gets initalized in create
+    try rdpc_msg.init_gcc_defaults(priv.msg, settings);
     return priv;
 }

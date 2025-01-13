@@ -1,6 +1,7 @@
 const std = @import("std");
 const parse = @import("parse");
 const rdpc_msg = @import("rdpc_msg.zig");
+const rdpc_gcc = @import("rdpc_gcc.zig");
 const c = @cImport(
 {
     @cInclude("librdpc.h");
@@ -242,7 +243,6 @@ pub const rdpc_priv_t = extern struct
             {
                 _ = self.logln(@src(),
                         "attach_user_confirm failed err [{}]", .{err});
-
                 return c.LIBRDPC_ERROR_PARSE;
             }
         }
@@ -414,6 +414,7 @@ pub fn create(allocator: *const std.mem.Allocator,
     priv.sub.* = .{};
     priv.msg = try rdpc_msg.create(allocator, priv);
     // priv.msg gets initalized in create
-    try rdpc_msg.init_gcc_defaults(priv.msg, settings);
+    try rdpc_gcc.init_gcc_defaults(priv.msg, settings);
+    try rdpc_msg.init_client_info_defaults(priv.msg, settings);
     return priv;
 }

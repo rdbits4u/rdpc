@@ -14,6 +14,7 @@
 
 struct rdpc_settings_t
 {
+    char username[64];
     char clientname[64];
     int keyboard_layout;
     int width;

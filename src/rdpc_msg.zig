@@ -115,7 +115,7 @@ pub const rdpc_msg_t = struct
         s.pop_layer(1);
         try ber_out_header(s, c.MCS_CONNECT_INITIAL, length_after);
         s.pop_layer(0); // go to iso header
-        iso_out_data_header(s, s.layer_subtract(3, 0));
+        try iso_out_data_header(s, s.layer_subtract(3, 0));
         s.pop_layer(3); // go to end
     }
 
@@ -177,7 +177,7 @@ pub const rdpc_msg_t = struct
         s.out_u16_be(1); // subInterval
         s.push_layer(0, 1);
         s.pop_layer(0);
-        iso_out_data_header(s, s.layer_subtract(1, 0));
+        try iso_out_data_header(s, s.layer_subtract(1, 0));
         s.pop_layer(1);
     }
 
@@ -193,7 +193,7 @@ pub const rdpc_msg_t = struct
         s.out_u8(c.MCS_AURQ << 2); // Attach User Request(10) << 2
         s.push_layer(0, 1);
         s.pop_layer(0);
-        iso_out_data_header(s, s.layer_subtract(1, 0));
+        try iso_out_data_header(s, s.layer_subtract(1, 0));
         s.pop_layer(1);
     }
 
@@ -235,17 +235,17 @@ pub const rdpc_msg_t = struct
     // 2.2.1.8 Client MCS Channel Join Request PDU
     // out
     pub fn channel_join_request(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+            s: *parse.parse_t, chanid: u16) !void
     {
         _ = self.priv.logln(@src(), "", .{});
         try s.check_rem(7 + 5);
         s.push_layer(7, 0);
         s.out_u8(c.MCS_CJRQ << 2); // Channel Join Request(14) << 2
         s.out_u16_be(self.mcs_userid);
-        s.out_u16_be(0x03ea); // chanid todo
+        s.out_u16_be(chanid);
         s.push_layer(0, 1);
         s.pop_layer(0);
-        iso_out_data_header(s, s.layer_subtract(1, 0));
+        try iso_out_data_header(s, s.layer_subtract(1, 0));
         s.pop_layer(1);
     }
 
@@ -253,7 +253,7 @@ pub const rdpc_msg_t = struct
     // 2.2.1.9 Server MCS Channel Join Confirm PDU
     // in
     pub fn channel_join_confirm(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+            s: *parse.parse_t, chanid: *u16) !void
     {
         _ = self.priv.logln(@src(), "", .{});
         var length: u16 = undefined;
@@ -274,10 +274,14 @@ pub const rdpc_msg_t = struct
                 return error.BadCode;
             }
             try s.check_rem(2);
-            self.mcs_userid = s.in_u16_be();
+            const mcs_userid = s.in_u16_be();
+            if (self.mcs_userid != mcs_userid)
+            {
+                return error.BadUser;
+            }
             try s.check_rem(2);
-            const chanid = s.in_u16_be(); // chanid todo
-            _ = self.priv.logln(@src(), "chanid {}", .{chanid});
+            chanid.* = s.in_u16_be();
+            _ = self.priv.logln(@src(), "chanid {}", .{chanid.*});
         }
         else
         {
@@ -345,11 +349,11 @@ pub const rdpc_msg_t = struct
         s.out_u32_le(c.SEC_LOGON_INFO);
         // mcs layer
         s.pop_layer(1);
-        mcs_out_header(s, s.layer_subtract(3, 1), self.mcs_userid,
+        try mcs_out_header(s, s.layer_subtract(3, 1), self.mcs_userid,
                 c.MCS_GLOBAL_CHANNEL);
         // iso layer
         s.pop_layer(0);
-        iso_out_data_header(s, s.layer_subtract(3, 0));
+        try iso_out_data_header(s, s.layer_subtract(3, 0));
         // back to end
         s.pop_layer(3);
     }
@@ -464,8 +468,12 @@ fn ber_out_integer(s: *parse.parse_t, val: u16) !void
 }
 
 //*****************************************************************************
-fn iso_out_data_header(s: *parse.parse_t, length: u16) void
+fn iso_out_data_header(s: *parse.parse_t, length: u16) !void
 {
+    if (length < 7)
+    {
+        return error.BadTag;
+    }
     s.out_u8(3);            // version
     s.out_u8(0);            // reserved
     s.out_u16_be(length);
@@ -499,8 +507,12 @@ fn iso_in_data_header(s: *parse.parse_t, length: *u16) !void
 
 //*****************************************************************************
 fn mcs_out_header(s: *parse.parse_t, length: u16,
-        userid: u16, channel: u16) void
+        userid: u16, channel: u16) !void
 {
+    if (length < 8)
+    {
+        return error.BadTag;
+    }
     s.out_u8(c.MCS_SDRQ << 2);
     s.out_u16_be(userid);
     s.out_u16_be(channel);
@@ -533,15 +545,95 @@ fn mcs_in_domain_params(s: *parse.parse_t) !void
 }
 
 //*********************************************************************************
+// convert utf8 to utf16le but still writes out to u8
+// make sure there is a 2 byte nil in the output
+pub fn out_uni(utf16_out: []u8, utf8_in: []const u8,
+        bytes_written_out: *usize) !void
+{
+    @memset(utf16_out, 0);
+    bytes_written_out.* = 0;
+    var out_index: usize = 0;
+    const out_count = (utf16_out.len >> 1) - 1;
+    var in_index: usize = 0;
+    const in_count = utf8_in.len;
+    while (in_index < in_count)
+    {
+        var chr21: u21 = 0;
+        const in_bytes =
+                try std.unicode.utf8ByteSequenceLength(utf8_in[in_index]);
+        if (in_index + in_bytes > in_count)
+        {
+            return error.Unexpected;
+        }
+        const in_start = in_index;
+        const in_end = in_start + in_bytes;
+        chr21 = switch (in_bytes)
+        {
+            1 => utf8_in[in_index],
+            2 => try std.unicode.utf8Decode2(utf8_in[in_start..in_end]),
+            3 => try std.unicode.utf8Decode3(utf8_in[in_start..in_end]),
+            4 => try std.unicode.utf8Decode4(utf8_in[in_start..in_end]),
+            else => return error.Unexpected,
+        };
+        in_index += in_bytes;
+        if (chr21 < 0x10000)
+        {
+            if (out_index + 1 > out_count)
+            {
+                return error.NoRoom;
+            }
+            utf16_out[out_index * 2] = @truncate(chr21);
+            utf16_out[out_index * 2 + 1] = @truncate(chr21 >> 8);
+            out_index += 1;
+            bytes_written_out.* += 1;
+        }
+        else
+        {
+            if (out_index + 2 > out_count)
+            {
+                return error.NoRoom;
+            }
+            const high = @as(u16, @intCast((chr21 - 0x10000) >> 10)) + 0xD800;
+            const low = @as(u16, @intCast(chr21 & 0x3FF)) + 0xDC00;
+            utf16_out[out_index * 2] = @truncate(low);
+            utf16_out[out_index * 2 + 1] = @truncate(low >> 8);
+            utf16_out[out_index * 2 + 2] = @truncate(high);
+            utf16_out[out_index * 2 + 3] = @truncate(high >> 8);
+            out_index += 2;
+            bytes_written_out.* += 2;
+        }
+    }
+}
+
+//*********************************************************************************
+// convert utf8 to utf16le but ignore when all does not fit
+pub fn out_uni_no_room_ok(out: []u8, text: []const u8,
+        bytes_written_out: *usize) !void
+{
+    const result = out_uni(out, text, bytes_written_out);
+    if (result) |_| { } else |err|
+    {
+        if (err != error.NoRoom)
+        {
+            return err;
+        }
+    }
+}
+
+//*********************************************************************************
 pub fn init_client_info_defaults(msg: *rdpc_msg_t,
         settings: *c.rdpc_settings_t) !void
 {
-    _ = settings;
+    _ = msg.priv.logln(@src(), "", .{});
     const rdpc = &msg.priv.rdpc;
     var client_info = &rdpc.client_info;
-    _ = msg.priv.logln(@src(), "", .{});
+    client_info.CodePage = 0;
     client_info.flags = c.RDP_INFO_MOUSE |
             c.RDP_INFO_DISABLECTRLALTDEL |
             c.RDP_INFO_UNICODE |
             c.RDP_INFO_MAXIMIZESHELL;
+    var bytes_written_out: usize = 0;
+    try out_uni_no_room_ok(&client_info.UserName, &settings.username,
+            &bytes_written_out);
+    client_info.cbUserName = @truncate(bytes_written_out);
 }

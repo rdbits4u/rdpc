@@ -19,77 +19,6 @@ fn pixels_to_mm(pixels: u32, dpi: i32) u32
 }
 
 //*********************************************************************************
-// convert utf8 to utf16le but still writes out to u8
-// make sure there is a 2 byte nil in the output
-fn out_uni(utf16_out: []u8, utf8_in: []const u8) !void
-{
-    @memset(utf16_out, 0);
-    var out_index: usize = 0;
-    const out_count = (utf16_out.len >> 1) - 1;
-    var in_index: usize = 0;
-    const in_count = utf8_in.len;
-    while (in_index < in_count)
-    {
-        var chr21: u21 = 0;
-        const in_bytes =
-                try std.unicode.utf8ByteSequenceLength(utf8_in[in_index]);
-        if (in_index + in_bytes > in_count)
-        {
-            return error.Unexpected;
-        }
-        const in_start = in_index;
-        const in_end = in_start + in_bytes;
-        chr21 = switch (in_bytes)
-        {
-            1 => utf8_in[in_index],
-            2 => try std.unicode.utf8Decode2(utf8_in[in_start..in_end]),
-            3 => try std.unicode.utf8Decode3(utf8_in[in_start..in_end]),
-            4 => try std.unicode.utf8Decode4(utf8_in[in_start..in_end]),
-            else => return error.Unexpected,
-        };
-        in_index += in_bytes;
-        if (chr21 < 0x10000)
-        {
-            if (out_index + 1 > out_count)
-            {
-                return error.NoRoom;
-            }
-            utf16_out[out_index * 2] = @intCast(chr21);
-            utf16_out[out_index * 2 + 1] = @intCast(chr21 >> 8);
-            out_index += 1;
-        }
-        else
-        {
-            if (out_index + 2 > out_count)
-            {
-                return error.NoRoom;
-            }
-            const high = @as(u16, @intCast((chr21 - 0x10000) >> 10)) + 0xD800;
-            const low = @as(u16, @intCast(chr21 & 0x3FF)) + 0xDC00;
-            utf16_out[out_index * 2] = @intCast(low);
-            utf16_out[out_index * 2 + 1] = @intCast(low >> 8);
-            utf16_out[out_index * 2 + 2] = @intCast(high);
-            utf16_out[out_index * 2 + 3] = @intCast(high >> 8);
-            out_index += 2;
-        }
-    }
-}
-
-//*********************************************************************************
-// convert utf8 to utf16le but ignore when all does not fit
-fn out_uni_no_room_ok(out: []u8, text: []const u8) !void
-{
-    const result = out_uni(out, text);
-    if (result) |_| { } else |err|
-    {
-        if (err != error.NoRoom)
-        {
-            return err;
-        }
-    }
-}
-
-//*********************************************************************************
 fn out_channel(chan: *c.struct_CHANNEL_DEF, name: []const u8, options: u32) void
 {
     @memcpy(chan.name[0..name.len], name);
@@ -128,7 +57,9 @@ pub fn init_gcc_defaults(msg: *rdpc_msg.rdpc_msg_t,
     core.keyboardLayout = @intCast(settings.keyboard_layout);
     core.clientBuild = 2600;
 
-    try out_uni_no_room_ok(&core.clientName, "PC1");
+    var bytes_written_out: usize = 0;
+    try rdpc_msg.out_uni_no_room_ok(&core.clientName, "PC1",
+            &bytes_written_out);
 
     // CS_SEC
     sec.header.type = c.CS_SECURITY;        // 0xC002;

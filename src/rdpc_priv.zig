@@ -145,24 +145,19 @@ pub const rdpc_priv_t = extern struct
     fn state0_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
         _ = self.logln(@src(), "", .{});
-        // code block for defer
+        const ins = parse.create_from_slice(self.allocator, slice) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer ins.delete();
+        if (self.msg.connection_confirm(ins)) |_| { } else |err|
         {
-            const ins = parse.create_from_slice(self.allocator, slice) catch
-                return c.LIBRDPC_ERROR_MEMORY;
-            defer ins.delete();
-            const result = self.msg.connection_confirm(ins);
-            if (result) |_| { } else |err|
-            {
-                _ = self.logln(@src(),
-                        "connection_confirm failed err [{}]", .{err});
-                return c.LIBRDPC_ERROR_PARSE;
-            }
+            _ = self.logln(@src(),
+                    "connection_confirm failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
         }
         const outs = parse.create(self.allocator, 8192) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer outs.delete();
-        const result = self.msg.conference_create_request(outs);
-        if (result) |_| { } else |err|
+        if (self.msg.conference_create_request(outs)) |_| { } else |err|
         {
             _ = self.logln(@src(),
                     "conference_create_request failed err [{}]", .{err});
@@ -183,24 +178,19 @@ pub const rdpc_priv_t = extern struct
     fn state1_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
         _ = self.logln(@src(), "", .{});
-        // code block for defer
+        const ins = parse.create_from_slice(self.allocator, slice) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer ins.delete();
+        if (self.msg.conference_create_response(ins)) |_| { } else |err|
         {
-            const ins = parse.create_from_slice(self.allocator, slice) catch
-                return c.LIBRDPC_ERROR_MEMORY;
-            defer ins.delete();
-            const result = self.msg.conference_create_response(ins);
-            if (result) |_| { } else |err|
-            {
-                _ = self.logln(@src(),
-                        "conference_create_response failed err [{}]", .{err});
-                return c.LIBRDPC_ERROR_PARSE;
-            }
+            _ = self.logln(@src(),
+                    "conference_create_response failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
         }
         const outs = parse.create(self.allocator, 8192) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer outs.delete();
-        var result = self.msg.erect_domain_request(outs);
-        if (result) |_| { } else |err|
+        if (self.msg.erect_domain_request(outs)) |_| { } else |err|
         {
             _ = self.logln(@src(),
                     "erect_domain_request failed err [{}]", .{err});
@@ -211,8 +201,7 @@ pub const rdpc_priv_t = extern struct
         {
             outs.reset(0) catch
                 return c.LIBRDPC_ERROR_MEMORY;
-            result = self.msg.attach_user_request(outs);
-            if (result) |_| { } else |err|
+            if (self.msg.attach_user_request(outs)) |_| { } else |err|
             {
                 _ = self.logln(@src(),
                         "attach_user_request failed err [{}]", .{err});
@@ -233,65 +222,32 @@ pub const rdpc_priv_t = extern struct
     fn state2_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
         _ = self.logln(@src(), "", .{});
-        // code block for defer
+        const ins = parse.create_from_slice(self.allocator, slice) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer ins.delete();
+        if (self.msg.attach_user_confirm(ins)) |_| { } else |err|
         {
-            const ins = parse.create_from_slice(self.allocator, slice) catch
-                return c.LIBRDPC_ERROR_MEMORY;
-            defer ins.delete();
-            const result = self.msg.attach_user_confirm(ins);
-            if (result) |_| { } else |err|
-            {
-                _ = self.logln(@src(),
-                        "attach_user_confirm failed err [{}]", .{err});
-                return c.LIBRDPC_ERROR_PARSE;
-            }
+            _ = self.logln(@src(),
+                    "attach_user_confirm failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
         }
         const outs = parse.create(self.allocator, 8192) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer outs.delete();
         var rv: c_int = c.LIBRDPC_ERROR_NONE;
-        if (self.msg.mcs_channels_joined < self.rdpc.cgcc.net.channelCount)
+        // join MCS_USER_CHANNEL
+        var chanid: u16 = c.MCS_USERCHANNEL_BASE;
+        chanid += self.msg.mcs_userid;
+        if (self.msg.channel_join_request(outs, chanid)) |_| { } else |err|
         {
-            const result = self.msg.channel_join_request(outs);
-            if (result) |_| { } else |err|
-            {
-                _ = self.logln(@src(),
-                        "channel_join_request failed err [{}]", .{err});
-                return c.LIBRDPC_ERROR_PARSE;
-            }
-            rv = self.send_slice_to_server(outs.get_out_slice());
-            if (rv == c.LIBRDPC_ERROR_NONE)
-            {
-                self.sub.state_fn = rdpc_priv_t.state3_fn;
-            }
+            _ = self.logln(@src(),
+                    "channel_join_request failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
         }
-        else
+        rv = self.send_slice_to_server(outs.get_out_slice());
+        if (rv == c.LIBRDPC_ERROR_NONE)
         {
-            var result = self.msg.security_exchange(outs);
-            if (result) |_| { } else |err|
-            {
-                _ = self.logln(@src(),
-                        "security_exchange failed err [{}]", .{err});
-                return c.LIBRDPC_ERROR_PARSE;
-            }
-            rv = self.send_slice_to_server(outs.get_out_slice());
-            if (rv == c.LIBRDPC_ERROR_NONE)
-            {
-                outs.reset(0) catch
-                    return c.LIBRDPC_ERROR_MEMORY;
-                result = self.msg.client_info(outs);
-                if (result) |_| { } else |err|
-                {
-                    _ = self.logln(@src(),
-                            "client_info failed err [{}]", .{err});
-                    return c.LIBRDPC_ERROR_PARSE;
-                }
-                rv = self.send_slice_to_server(outs.get_out_slice());
-                if (rv == c.LIBRDPC_ERROR_NONE)
-                {
-                    self.sub.state_fn = rdpc_priv_t.state4_fn;
-                }
-            }
+            self.sub.state_fn = rdpc_priv_t.state3_fn;
         }
         return rv;
     }
@@ -302,28 +258,62 @@ pub const rdpc_priv_t = extern struct
     fn state3_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
         _ = self.logln(@src(), "", .{});
-        // code block for defer
+        const ins = parse.create_from_slice(self.allocator, slice) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer ins.delete();
+        var chanid: u16 = 0;
+        if (self.msg.channel_join_confirm(ins, &chanid)) |_| { } else |err|
         {
-            const ins = parse.create_from_slice(self.allocator, slice) catch
-                return c.LIBRDPC_ERROR_MEMORY;
-            defer ins.delete();
-            const result = self.msg.channel_join_confirm(ins);
-            if (result) |_| { } else |err|
-            {
-                _ = self.logln(@src(),
-                        "channel_join_confirm failed err [{}]", .{err});
-                return c.LIBRDPC_ERROR_PARSE;
-            }
-            self.msg.mcs_channels_joined += 1;
+            _ = self.logln(@src(),
+                    "channel_join_confirm failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
         }
         var rv: c_int = c.LIBRDPC_ERROR_NONE;
         const outs = parse.create(self.allocator, 8192) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer outs.delete();
-        if (self.msg.mcs_channels_joined < self.rdpc.cgcc.net.channelCount)
+        // join MCS_GLOBAL_CHANNEL
+        chanid = c.MCS_GLOBAL_CHANNEL;
+        if (self.msg.channel_join_request(outs, chanid)) |_| { } else |err|
         {
-            const result = self.msg.channel_join_request(outs);
-            if (result) |_| { } else |err|
+            _ = self.logln(@src(),
+                    "channel_join_request failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
+        }
+        rv = self.send_slice_to_server(outs.get_out_slice());
+        if (rv == c.LIBRDPC_ERROR_NONE)
+        {
+            self.sub.state_fn = rdpc_priv_t.state4_fn;
+        }
+        return rv;
+    }
+
+    /// state3_fn sent channel_join_request, process
+    /// channel_join_confirm and send channel_join_request
+    //*************************************************************************
+    fn state4_fn(self: *rdpc_priv_t, slice: []u8) c_int
+    {
+        _ = self.logln(@src(), "", .{});
+        const ins = parse.create_from_slice(self.allocator, slice) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer ins.delete();
+        var chanid: u16 = 0;
+        if (self.msg.channel_join_confirm(ins, &chanid)) |_| { } else |err|
+        {
+            _ = self.logln(@src(),
+                    "channel_join_confirm failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
+        }
+        self.msg.mcs_channels_joined += 1;
+        var rv: c_int = c.LIBRDPC_ERROR_NONE;
+        const outs = parse.create(self.allocator, 8192) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer outs.delete();
+        const joined = self.msg.mcs_channels_joined;
+        if (joined < self.rdpc.cgcc.net.channelCount)
+        {
+            chanid = self.rdpc.sgcc.net.channelIdArray[joined];
+            if (self.msg.channel_join_request(outs, chanid)) |_| { } else |err|
             {
                 _ = self.logln(@src(),
                         "channel_join_request failed err [{}]", .{err});
@@ -333,8 +323,7 @@ pub const rdpc_priv_t = extern struct
         }
         else
         {
-            var result = self.msg.security_exchange(outs);
-            if (result) |_| { } else |err|
+            if (self.msg.security_exchange(outs)) |_| { } else |err|
             {
                 _ = self.logln(@src(),
                         "security_exchange failed err [{}]", .{err});
@@ -345,8 +334,7 @@ pub const rdpc_priv_t = extern struct
             {
                 outs.reset(0) catch
                     return c.LIBRDPC_ERROR_MEMORY;
-                result = self.msg.client_info(outs);
-                if (result) |_| { } else |err|
+                if (self.msg.client_info(outs)) |_| { } else |err|
                 {
                     _ = self.logln(@src(),
                             "client_info failed err [{}]", .{err});
@@ -355,37 +343,32 @@ pub const rdpc_priv_t = extern struct
                 rv = self.send_slice_to_server(outs.get_out_slice());
                 if (rv == c.LIBRDPC_ERROR_NONE)
                 {
-                    self.sub.state_fn = rdpc_priv_t.state4_fn;
+                    self.sub.state_fn = rdpc_priv_t.state5_fn;
                 }
             }
         }
         return rv;
     }
 
-    /// state1_fn sent security_exchange and client_info, process
+    /// state4_fn sent security_exchange and client_info, process
     /// auto_detect_request and send auto_detect_respone
     //*************************************************************************
-    fn state4_fn(self: *rdpc_priv_t, slice: []u8) c_int
+    fn state5_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
         _ = self.logln(@src(), "", .{});
-        // code block for defer
+        const ins = parse.create_from_slice(self.allocator, slice) catch
+            return c.LIBRDPC_ERROR_MEMORY;
+        defer ins.delete();
+        if (self.msg.auto_detect_request(ins)) |_| { } else |err|
         {
-            const ins = parse.create_from_slice(self.allocator, slice) catch
-                return c.LIBRDPC_ERROR_MEMORY;
-            defer ins.delete();
-            const result = self.msg.auto_detect_request(ins);
-            if (result) |_| { } else |err|
-            {
-                _ = self.logln(@src(),
-                        "auto_detect_request failed err [{}]", .{err});
-                return c.LIBRDPC_ERROR_PARSE;
-            }
+            _ = self.logln(@src(),
+                    "auto_detect_request failed err [{}]", .{err});
+            return c.LIBRDPC_ERROR_PARSE;
         }
         const outs = parse.create(self.allocator, 8192) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer outs.delete();
-        const result = self.msg.auto_detect_response(outs);
-        if (result) |_| { } else |err|
+        if (self.msg.auto_detect_response(outs)) |_| { } else |err|
         {
             _ = self.logln(@src(),
                     "auto_detect_response failed err [{}]", .{err});

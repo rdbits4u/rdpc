@@ -237,7 +237,7 @@ pub const rdpc_msg_t = struct
     pub fn channel_join_request(self: *rdpc_msg_t,
             s: *parse.parse_t, chanid: u16) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        _ = self.priv.logln(@src(), "chanid {}", .{chanid});
         try s.check_rem(7 + 5);
         s.push_layer(7, 0);
         s.out_u8(c.MCS_CJRQ << 2); // Channel Join Request(14) << 2

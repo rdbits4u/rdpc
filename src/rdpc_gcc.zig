@@ -117,14 +117,14 @@ pub fn gcc_out_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 
     s.push_layer(2, 0);
 
-    var core = msg.priv.rdpc.cgcc.core;
-    var sec = msg.priv.rdpc.cgcc.sec;
-    var net = msg.priv.rdpc.cgcc.net;
-    var cluster = msg.priv.rdpc.cgcc.cluster;
-    var monitor = msg.priv.rdpc.cgcc.monitor;
-    var msgchannel = msg.priv.rdpc.cgcc.msgchannel;
-    var monitor_ex = msg.priv.rdpc.cgcc.monitor_ex;
-    var multitransport = msg.priv.rdpc.cgcc.multitransport;
+    var core = &msg.priv.rdpc.cgcc.core;
+    var sec = &msg.priv.rdpc.cgcc.sec;
+    var net = &msg.priv.rdpc.cgcc.net;
+    var cluster = &msg.priv.rdpc.cgcc.cluster;
+    var monitor = &msg.priv.rdpc.cgcc.monitor;
+    var msgchannel = &msg.priv.rdpc.cgcc.msgchannel;
+    var monitor_ex = &msg.priv.rdpc.cgcc.monitor_ex;
+    var multitransport = &msg.priv.rdpc.cgcc.multitransport;
 
     // CS_CORE
     if (core.header.type != 0)
@@ -324,11 +324,11 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
         length = length & 0x7FFF;
     }
     try s.check_rem(length);
-    var core = msg.priv.rdpc.sgcc.core;
-    var sec = msg.priv.rdpc.sgcc.sec;
-    var net = msg.priv.rdpc.sgcc.net;
-    var msgchannel = msg.priv.rdpc.sgcc.msgchannel;
-    var multitransport = msg.priv.rdpc.sgcc.multitransport;
+    var core = &msg.priv.rdpc.sgcc.core;
+    var sec = &msg.priv.rdpc.sgcc.sec;
+    var net = &msg.priv.rdpc.sgcc.net;
+    var msgchannel = &msg.priv.rdpc.sgcc.msgchannel;
+    var multitransport = &msg.priv.rdpc.sgcc.multitransport;
     while (s.check_rem_bool(4))
     {
         s.push_layer(0, 0);

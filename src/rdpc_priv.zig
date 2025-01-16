@@ -18,7 +18,6 @@ const rdpc_priv_sub_t = struct
 pub const rdpc_priv_t = extern struct
 {
     rdpc: c.rdpc_t = .{},
-    settings: c.rdpc_settings_t = .{},
     allocator: *const std.mem.Allocator = undefined,
     msg: *rdpc_msg.rdpc_msg_t = undefined,
     sub: *rdpc_priv_sub_t = undefined,
@@ -304,7 +303,6 @@ pub const rdpc_priv_t = extern struct
                     "channel_join_confirm failed err [{}]", .{err});
             return c.LIBRDPC_ERROR_PARSE;
         }
-        self.msg.mcs_channels_joined += 1;
         var rv: c_int = c.LIBRDPC_ERROR_NONE;
         const outs = parse.create(self.allocator, 8192) catch
             return c.LIBRDPC_ERROR_MEMORY;
@@ -313,6 +311,7 @@ pub const rdpc_priv_t = extern struct
         if (joined < self.rdpc.cgcc.net.channelCount)
         {
             chanid = self.rdpc.sgcc.net.channelIdArray[joined];
+            _ = self.logln(@src(), "chanid {} joined {}", .{chanid, joined});
             if (self.msg.channel_join_request(outs, chanid)) |_| { } else |err|
             {
                 _ = self.logln(@src(),
@@ -320,6 +319,8 @@ pub const rdpc_priv_t = extern struct
                 return c.LIBRDPC_ERROR_PARSE;
             }
             rv = self.send_slice_to_server(outs.get_out_slice());
+            self.msg.mcs_channels_joined += 1;
+
         }
         else
         {

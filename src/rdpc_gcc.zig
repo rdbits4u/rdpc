@@ -21,7 +21,7 @@ fn pixels_to_mm(pixels: u32, dpi: i32) u32
 //*********************************************************************************
 fn out_channel(chan: *c.struct_CHANNEL_DEF, name: []const u8, options: u32) void
 {
-    @memcpy(chan.name[0..name.len], name);
+    std.mem.copyForwards(u8, &chan.name, name);
     chan.options = options;
 }
 
@@ -48,18 +48,17 @@ pub fn init_gcc_defaults(msg: *rdpc_msg.rdpc_msg_t,
     core.desktopPhysicalHeight =
             pixels_to_mm(core.desktopHeight, settings.dpiy);
     core.colorDepth = @intCast(settings.bpp);
-    std.debug.print("width {} mmwidth {} height {} mmheight {}\n",
-            .{core.desktopWidth, core.desktopHeight,
-            core.desktopPhysicalWidth, core.desktopPhysicalHeight});
     core.colorDepth = c.RNS_UD_COLOR_8BPP;  // 0xCA01 8 bits/pixel
     // secure access sequence
     core.SASSequence = c.RNS_UD_SAS_DEL;    // 0xAA03
     core.keyboardLayout = @intCast(settings.keyboard_layout);
     core.clientBuild = 2600;
 
-    var bytes_written_out: usize = 0;
-    try rdpc_msg.out_uni_no_room_ok(&core.clientName, "PC1",
-            &bytes_written_out);
+    var u32_array = std.ArrayList(u32).init(msg.allocator.*);
+    defer u32_array.deinit();
+    var len_u16: u16 = 0;
+    try rdpc_msg.utf8_to_utf16Z_as_u8(&u32_array, &settings.clientname,
+            &core.clientName, &len_u16);
 
     // CS_SEC
     sec.header.type = c.CS_SECURITY;        // 0xC002;
@@ -380,7 +379,8 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
                         break;
                     }
                     const rand_slice = sec.serverRandom[0..sec.serverRandomLen];
-                    @memcpy(rand_slice, ls.in_u8_slice(sec.serverRandomLen));
+                    std.mem.copyForwards(u8, rand_slice,
+                            ls.in_u8_slice(sec.serverRandomLen));
                     const cert_size = @sizeOf(@TypeOf(sec.serverCertificate));
                     if ((sec.serverCertLen > cert_size) or
                             !ls.check_rem_bool(sec.serverCertLen))
@@ -388,7 +388,8 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
                         break;
                     }
                     const cert_slice = sec.serverCertificate[0..sec.serverCertLen];
-                    @memcpy(cert_slice, ls.in_u8_slice(sec.serverCertLen));
+                    std.mem.copyForwards(u8, cert_slice,
+                            ls.in_u8_slice(sec.serverCertLen));
                 },
                 c.SC_NET => // 0xC03
                 {

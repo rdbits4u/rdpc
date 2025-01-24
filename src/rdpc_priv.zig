@@ -1,5 +1,6 @@
 const std = @import("std");
 const parse = @import("parse");
+const hexdump = @import("hexdump");
 const rdpc_msg = @import("rdpc_msg.zig");
 const rdpc_gcc = @import("rdpc_gcc.zig");
 const c = @cImport(
@@ -17,7 +18,7 @@ const rdpc_priv_sub_t = struct
 // c abi struct
 pub const rdpc_priv_t = extern struct
 {
-    rdpc: c.rdpc_t = .{},
+    rdpc: c.struct_rdpc_t = .{},
     allocator: *const std.mem.Allocator = undefined,
     msg: *rdpc_msg.rdpc_msg_t = undefined,
     sub: *rdpc_priv_sub_t = undefined,
@@ -56,6 +57,9 @@ pub const rdpc_priv_t = extern struct
         // check if function is assigned
         if (self.rdpc.send_to_server) |asend_to_server|
         {
+            _ = self.logln(@src(), "hexdump len {}", .{data.len});
+            hexdump.printHexDump(0, data) catch
+                return c.LIBRDPC_ERROR_MEMORY;
             // call the c callback
             return asend_to_server(&self.rdpc,
                     data.ptr, @intCast(data.len));
@@ -127,6 +131,9 @@ pub const rdpc_priv_t = extern struct
         {
             abytes_processed.* = len;
         }
+        _ = self.logln(@src(), "hexdump len {}", .{len});
+        hexdump.printHexDump(0, slice[0..len]) catch
+            return c.LIBRDPC_ERROR_MEMORY;
         return self.sub.state_fn(self, slice[0..len]);
     }
 

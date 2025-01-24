@@ -14,7 +14,11 @@
 
 struct rdpc_settings_t
 {
+    char domain[64];
     char username[64];
+    char password[64];
+    char altshell[64];
+    char workingdir[64];
     char clientname[64];
     int keyboard_layout;
     int width;

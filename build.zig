@@ -18,5 +18,8 @@ pub fn build(b: *std.Build) void
     librdpc.root_module.addImport("parse", b.createModule(.{
         .root_source_file = b.path("../common/parse.zig"),
     }));
+    librdpc.root_module.addImport("hexdump", b.createModule(.{
+        .root_source_file = b.path("../common/hexdump.zig"),
+    }));
     b.installArtifact(librdpc);
 }

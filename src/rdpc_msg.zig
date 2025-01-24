@@ -364,8 +364,32 @@ pub const rdpc_msg_t = struct
             s: *parse.parse_t) !void
     {
         _ = self.priv.logln(@src(), "", .{});
-        try s.check_rem(6);
+        var length: u16 = 0;
+        try iso_in_data_header(s, &length);
+        try s.check_rem(length - 7);
+        _ = self.priv.logln(@src(), "iso length {}", .{length});
+        var userid: u16 = 0;
+        var channel: u16 = 0;
+        try mcs_in_header(s, &length, &userid, &channel);
+        try s.check_rem(length);
+        _ = self.priv.logln(@src(), "mcs length {} userid {} channel {}",
+                .{length, userid, channel});
     }
+
+const lic_info = [_]u8
+{
+    0x03, 0x00, 0x00, 0xa4, 0x02, 0xf0, 0x80, 0x64, 0x00, 0x01, 0x03, 0xeb, 0x70, 0x80, 0x95, 0x80,
+    0x00, 0x00, 0x00, 0x13, 0x03, 0x91, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+    0x00, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x00, 0x09, 0x00, 0x75,
+    0x73, 0x65, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x00, 0x10, 0x00, 0x08, 0x00, 0x6a, 0x61, 0x79, 0x2d,
+    0x6e, 0x75, 0x63, 0x00,
+};
 
     //*************************************************************************
     // out
@@ -374,6 +398,7 @@ pub const rdpc_msg_t = struct
     {
         _ = self.priv.logln(@src(), "", .{});
         try s.check_rem(1024);
+        s.out_u8_slice(&lic_info);
     }
 
 };
@@ -509,7 +534,7 @@ fn iso_in_data_header(s: *parse.parse_t, length: *u16) !void
 fn mcs_out_header(s: *parse.parse_t, length: u16,
         userid: u16, channel: u16) !void
 {
-    if (length < 8)
+    if (length < 1)
     {
         return error.BadTag;
     }
@@ -518,6 +543,33 @@ fn mcs_out_header(s: *parse.parse_t, length: u16,
     s.out_u16_be(channel);
     s.out_u8(0x70); // flags
     s.out_u16_be(0x8000 | (length - 8));
+}
+
+//*****************************************************************************
+fn mcs_in_header(s: *parse.parse_t, length: *u16,
+        userid: *u16, channel: *u16) !void
+{
+    try s.check_rem(7);
+    const code = s.in_u8();
+    if (code != 0x68)
+    {
+        return error.BadCode;
+    }
+    userid.* = s.in_u16_be();
+    channel.* = s.in_u16_be();
+    const flags = s.in_u8();
+    if (flags != 0x70)
+    {
+        return error.BadCode;
+    }
+    var llength: u16 = s.in_u8();
+    if ((llength & 0x80) != 0)
+    {
+        try s.check_rem(1);
+        llength = (llength << 8) | s.in_u8();
+        llength = llength & 0x7FFF;
+    }
+    length.* = llength;
 }
 
 //*****************************************************************************
@@ -545,20 +597,13 @@ fn mcs_in_domain_params(s: *parse.parse_t) !void
 }
 
 //*********************************************************************************
-// convert utf8 to utf16le but still writes out to u8
-// make sure there is a 2 byte nil in the output
-pub fn out_uni(utf16_out: []u8, utf8_in: []const u8,
-        bytes_written_out: *usize) !void
+pub fn utf8_to_u32_array(utf8_in: []const u8, utf32_out: *std.ArrayList(u32)) !void
 {
-    @memset(utf16_out, 0);
-    bytes_written_out.* = 0;
-    var out_index: usize = 0;
-    const out_count = (utf16_out.len >> 1) - 1;
     var in_index: usize = 0;
     const in_count = utf8_in.len;
     while (in_index < in_count)
     {
-        var chr21: u21 = 0;
+        var chr21: u21 = undefined;
         const in_bytes =
                 try std.unicode.utf8ByteSequenceLength(utf8_in[in_index]);
         if (in_index + in_bytes > in_count)
@@ -576,51 +621,116 @@ pub fn out_uni(utf16_out: []u8, utf8_in: []const u8,
             else => return error.Unexpected,
         };
         in_index += in_bytes;
+        try utf32_out.append(chr21);
+    }
+    // remove any trailing zeros
+    while ((utf32_out.items.len > 0) and
+            (utf32_out.items[utf32_out.items.len - 1] == 0))
+    {
+        utf32_out.items.len -= 1;
+    }
+}
+
+//*********************************************************************************
+pub fn utf16_to_u32_array(utf16_in: []const u16, utf32_out: *std.ArrayList(u32)) !void
+{
+    var in_index: usize = 0;
+    const in_count = utf16_in.len;
+    while (in_index < in_count)
+    {
+        var chr21: u21 = undefined;
+        const in_shorts =
+                try std.unicode.utf16CodeUnitSequenceLength(utf16_in[in_index]);
+        if (in_index + in_shorts > in_count)
+        {
+            return error.Unexpected;
+        }
+        const in_start = in_index;
+        const in_end = in_start + in_shorts;
+        chr21 = switch (in_shorts)
+        {
+            1 => utf16_in[in_index],
+            2 => try std.unicode.utf16DecodeSurrogatePair(utf16_in[in_start..in_end]),
+            else => return error.Unexpected,
+        };
+        in_index += in_shorts;
+        try utf32_out.append(chr21);
+    }
+    // remove any trailing zeros
+    while ((utf32_out.items.len > 0) and
+            (utf32_out.items[utf32_out.items.len - 1] == 0))
+    {
+        utf32_out.items.len -= 1;
+    }
+}
+
+//*********************************************************************************
+pub fn u32_array_to_utf16Z_as_u8(u32_array: *std.ArrayList(u32),
+        utf16_as_u8: []u8, bytes_written_out: *usize) !void
+{
+    if ((utf16_as_u8.len >> 1) < 1)
+    {
+        return error.Unexpected;
+    }
+    @memset(utf16_as_u8, 0);
+    bytes_written_out.* = 0;
+    var chr21: u21 = undefined;
+    var out_index: usize = 0;
+    const out_max = (utf16_as_u8.len >> 1) - 1;
+    var in_index: usize = 0;
+    const in_count = u32_array.items.len;
+    while (in_index < in_count) : (in_index += 1)
+    {
+        chr21 = @truncate(u32_array.items[in_index]);
         if (chr21 < 0x10000)
         {
-            if (out_index + 1 > out_count)
+            if (out_index + 1 > out_max)
             {
                 return error.NoRoom;
             }
-            utf16_out[out_index * 2] = @truncate(chr21);
-            utf16_out[out_index * 2 + 1] = @truncate(chr21 >> 8);
+            utf16_as_u8[out_index * 2] = @truncate(chr21);
+            utf16_as_u8[out_index * 2 + 1] = @truncate(chr21 >> 8);
             out_index += 1;
-            bytes_written_out.* += 1;
+            bytes_written_out.* += 2;
         }
         else
         {
-            if (out_index + 2 > out_count)
+            if (out_index + 2 > out_max)
             {
                 return error.NoRoom;
             }
             const high = @as(u16, @intCast((chr21 - 0x10000) >> 10)) + 0xD800;
             const low = @as(u16, @intCast(chr21 & 0x3FF)) + 0xDC00;
-            utf16_out[out_index * 2] = @truncate(low);
-            utf16_out[out_index * 2 + 1] = @truncate(low >> 8);
-            utf16_out[out_index * 2 + 2] = @truncate(high);
-            utf16_out[out_index * 2 + 3] = @truncate(high >> 8);
+            utf16_as_u8[out_index * 2] = @truncate(low);
+            utf16_as_u8[out_index * 2 + 1] = @truncate(low >> 8);
+            utf16_as_u8[out_index * 2 + 2] = @truncate(high);
+            utf16_as_u8[out_index * 2 + 3] = @truncate(high >> 8);
             out_index += 2;
-            bytes_written_out.* += 2;
+            bytes_written_out.* += 4;
         }
     }
 }
 
 //*********************************************************************************
-// convert utf8 to utf16le but ignore when all does not fit
-pub fn out_uni_no_room_ok(out: []u8, text: []const u8,
-        bytes_written_out: *usize) !void
+pub fn utf8_to_utf16Z_as_u8(u32_array: *std.ArrayList(u32),
+        utf8: []const u8, utf16_as_u8: []u8, cbSize: *u16) !void
 {
-    const result = out_uni(out, text, bytes_written_out);
-    if (result) |_| { } else |err|
+    try u32_array.resize(0);
+    try utf8_to_u32_array(utf8, u32_array);
+    var bytes_written_out: usize = 0;
+    if (u32_array_to_utf16Z_as_u8(u32_array, utf16_as_u8,
+            &bytes_written_out)) |_| { } else |err|
     {
         if (err != error.NoRoom)
         {
             return err;
         }
     }
+    cbSize.* = @truncate(bytes_written_out);
 }
 
 //*********************************************************************************
+// 2.2.1.11.1 Client Info PDU Data (CLIENT_INFO_PDU)
 pub fn init_client_info_defaults(msg: *rdpc_msg_t,
         settings: *c.rdpc_settings_t) !void
 {
@@ -632,8 +742,21 @@ pub fn init_client_info_defaults(msg: *rdpc_msg_t,
             c.RDP_INFO_DISABLECTRLALTDEL |
             c.RDP_INFO_UNICODE |
             c.RDP_INFO_MAXIMIZESHELL;
-    var bytes_written_out: usize = 0;
-    try out_uni_no_room_ok(&client_info.UserName, &settings.username,
-            &bytes_written_out);
-    client_info.cbUserName = @truncate(bytes_written_out);
+    var u32_array = std.ArrayList(u32).init(msg.allocator.*);
+    defer u32_array.deinit();
+    try utf8_to_utf16Z_as_u8(&u32_array,
+            std.mem.sliceTo(&settings.domain, 0),
+            &client_info.Domain, &client_info.cbDomain);
+    try utf8_to_utf16Z_as_u8(&u32_array,
+            std.mem.sliceTo(&settings.username, 0),
+            &client_info.UserName, &client_info.cbUserName);
+    try utf8_to_utf16Z_as_u8(&u32_array,
+            std.mem.sliceTo(&settings.password, 0),
+            &client_info.Password, &client_info.cbPassword);
+    try utf8_to_utf16Z_as_u8(&u32_array,
+            std.mem.sliceTo(&settings.altshell, 0),
+            &client_info.AlternateShell, &client_info.cbAlternateShell);
+    try utf8_to_utf16Z_as_u8(&u32_array,
+            std.mem.sliceTo(&settings.workingdir, 0),
+            &client_info.WorkingDir, &client_info.cbWorkingDir);
 }

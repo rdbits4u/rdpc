@@ -359,7 +359,7 @@ pub const rdpc_priv_t = extern struct
     }
 
     /// state4_fn sent security_exchange and client_info, process
-    /// auto_detect_request and send auto_detect_respone
+    /// process_sec
     //*************************************************************************
     fn state5_fn(self: *rdpc_priv_t, slice: []u8) c_int
     {
@@ -367,27 +367,31 @@ pub const rdpc_priv_t = extern struct
         const ins = parse.create_from_slice(self.allocator, slice) catch
             return c.LIBRDPC_ERROR_MEMORY;
         defer ins.delete();
-        if (self.msg.auto_detect_request(ins)) |_| { } else |err|
+        if (self.msg.process_sec(ins)) |_| { } else |err|
         {
             _ = self.logln(@src(),
-                    "auto_detect_request failed err [{}]", .{err});
+                    "process_sec failed err [{}]", .{err});
             return c.LIBRDPC_ERROR_PARSE;
         }
-        const outs = parse.create(self.allocator, 8192) catch
+        self.sub.state_fn = rdpc_priv_t.state6_fn;
+        return c.LIBRDPC_ERROR_NONE;
+    }
+
+    /// process_rdp
+    //*************************************************************************
+    fn state6_fn(self: *rdpc_priv_t, slice: []u8) c_int
+    {
+        _ = self.logln(@src(), "", .{});
+        const ins = parse.create_from_slice(self.allocator, slice) catch
             return c.LIBRDPC_ERROR_MEMORY;
-        defer outs.delete();
-        if (self.msg.auto_detect_response(outs)) |_| { } else |err|
+        defer ins.delete();
+        if (self.msg.process_rdp(ins)) |_| { } else |err|
         {
             _ = self.logln(@src(),
-                    "auto_detect_response failed err [{}]", .{err});
+                    "process_rdp failed err [{}]", .{err});
             return c.LIBRDPC_ERROR_PARSE;
         }
-        const rv = self.send_slice_to_server(outs.get_out_slice());
-        if (rv == c.LIBRDPC_ERROR_NONE)
-        {
-            //self.sub.state_fn = rdpc_priv_t.state5_fn;
-        }
-        return rv;
+        return c.LIBRDPC_ERROR_NONE;
     }
 
 };

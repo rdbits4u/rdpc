@@ -1,7 +1,9 @@
 const std = @import("std");
 const parse = @import("parse");
+const strings = @import("strings");
 const rdpc_priv = @import("rdpc_priv.zig");
 const rdpc_gcc = @import("rdpc_gcc.zig");
+const rdpc_caps = @import("rdpc_caps.zig");
 const c = @cImport(
 {
     @cInclude("librdpc.h");
@@ -12,6 +14,7 @@ pub const rdpc_msg_t = struct
     allocator: *const std.mem.Allocator = undefined,
     mcs_userid: u16 = 0,
     mcs_channels_joined: u16 = 0,
+    rdp_share_id: u32 = 0,
     pad0: i32 = 0,
     priv: *rdpc_priv.rdpc_priv_t = undefined,
 
@@ -360,7 +363,7 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    pub fn auto_detect_request(self: *rdpc_msg_t,
+    pub fn process_sec(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
         _ = self.priv.logln(@src(), "", .{});
@@ -374,31 +377,185 @@ pub const rdpc_msg_t = struct
         try s.check_rem(length);
         _ = self.priv.logln(@src(), "mcs length {} userid {} channel {}",
                 .{length, userid, channel});
+        const flags = s.in_u16_le();
+        const flagshi = s.in_u16_le();
+        _ = self.priv.logln(@src(), "sec flags 0x{X} sec flagshi 0x{X}",
+                .{flags, flagshi});
+        if ((flags & c.SEC_LICENCE_NEG) == 0)
+        {
+            return error.BadCode;
+        }
     }
 
-const lic_info = [_]u8
-{
-    0x03, 0x00, 0x00, 0xa4, 0x02, 0xf0, 0x80, 0x64, 0x00, 0x01, 0x03, 0xeb, 0x70, 0x80, 0x95, 0x80,
-    0x00, 0x00, 0x00, 0x13, 0x03, 0x91, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
-    0x00, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x00, 0x09, 0x00, 0x75,
-    0x73, 0x65, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x00, 0x10, 0x00, 0x08, 0x00, 0x6a, 0x61, 0x79, 0x2d,
-    0x6e, 0x75, 0x63, 0x00,
-};
-
     //*************************************************************************
-    // out
-    pub fn auto_detect_response(self: *rdpc_msg_t,
+    // in
+    pub fn process_rdp(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
         _ = self.priv.logln(@src(), "", .{});
-        try s.check_rem(1024);
-        s.out_u8_slice(&lic_info);
+        try s.check_rem(1);
+        s.push_layer(0, 0);
+        const code = s.in_u8();
+        s.pop_layer(0);
+        if (code != 3)
+        {
+            return process_rdp_fastpath_pdu(self, s);
+        }
+        // non fastpath
+        var length: u16 = 0;
+        try iso_in_data_header(s, &length);
+        try s.check_rem(length - 7);
+        _ = self.priv.logln(@src(), "iso length {}", .{length});
+        var userid: u16 = 0;
+        var channel: u16 = 0;
+        try mcs_in_header(s, &length, &userid, &channel);
+        try s.check_rem(length);
+        _ = self.priv.logln(@src(), "mcs length {} userid {} channel {}",
+                .{length, userid, channel});
+        if (userid != self.mcs_userid)
+        {
+            return error.BadCode;
+        }
+        if (channel != c.MCS_GLOBAL_CHANNEL)
+        {
+            return process_rdp_channel_pdu(self, s);
+        }
+        while (s.check_rem_bool(2))
+        {
+            s.push_layer(0, 0);
+            const totallength = s.in_u16_le();
+            if (totallength < 6)
+            {
+                return error.BadLength;
+            }
+            try s.check_rem(totallength - 2);
+            s.pop_layer(0);
+            const ins = try parse.create_from_slice(self.allocator,
+                    s.in_u8_slice(totallength));
+            defer ins.delete();
+            try self.process_rdp_pdu(ins);
+        }
+    }
+
+    //*************************************************************************
+    // in
+    fn process_rdp_pdu(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self.priv.logln(@src(), "", .{});
+        try s.check_rem(6);
+        const totallength = s.in_u16_le();
+        const pdutype = s.in_u16_le();
+        const pdusource = s.in_u16_le();
+        _ = self.priv.logln(@src(),
+                "rdp totallength 0x{X} sec pdutype 0x{X} pdusource 0x{X}",
+                .{totallength, pdutype, pdusource});
+        switch (pdutype & 0xF)
+        {
+            c.SCH_PDUTYPE_DEMANDACTIVEPDU => try process_rdp_demand_active(self, s),
+            c.SCH_PDUTYPE_DATAPDU => try process_rdp_data(self, s),
+            else => return error.BadCode,
+        }
+    }
+
+    //*************************************************************************
+    // in
+    fn process_rdp_demand_active(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self.priv.logln(@src(), "", .{});
+        try s.check_rem(8);
+        self.rdp_share_id = s.in_u32_le();
+        const tag_len = s.in_u16_le();
+        const caps_len = s.in_u16_le();
+        if (tag_len != 4)
+        {
+            return error.BadTag;
+        }
+        try s.check_rem(tag_len + 4);
+        var tag_text: [4]u8 = undefined;
+        std.mem.copyForwards(u8, tag_text[0..4], s.in_u8_slice(tag_len));
+        const caps_count = s.in_u32_le();
+        _ = self.priv.logln(@src(), "caps_count {} caps_len {}",
+                .{caps_count, caps_len});
+        try s.check_rem(caps_len);
+        var cap_type: u16 = undefined;
+        var cap_len: u16 = undefined;
+        for (0..caps_count) |index|
+        {
+            try s.check_rem(4);
+            s.push_layer(0, 0);
+            cap_type = s.in_u16_le();
+            cap_len = s.in_u16_le();
+            _ = self.priv.logln(@src(),
+                    "index {} cap_type {} cap_len {}",
+                    .{index, cap_type, cap_len});
+            try s.check_rem(cap_len - 4);
+            s.pop_layer(0);
+            const ins = try parse.create_from_slice(self.allocator,
+                    s.in_u8_slice(cap_len));
+            defer ins.delete();
+            switch (cap_type)
+            {
+                c.CAPSTYPE_GENERAL => try rdpc_caps.process_cap_general(self, ins),
+                c.CAPSTYPE_BITMAP => try rdpc_caps.process_cap_bitmap(self, ins),
+                c.CAPSTYPE_ORDER => try rdpc_caps.process_cap_order(self, ins),
+                c.CAPSTYPE_BITMAPCACHE => try rdpc_caps.process_cap_bitmapcache(self, ins),
+                c.CAPSTYPE_CONTROL => try rdpc_caps.process_cap_control(self, ins),
+                c.CAPSTYPE_ACTIVATION => try rdpc_caps.process_cap_activation(self, ins),
+                c.CAPSTYPE_POINTER => try rdpc_caps.process_cap_pointer(self, ins),
+                c.CAPSTYPE_SHARE => try rdpc_caps.process_cap_share(self, ins),
+                c.CAPSTYPE_COLORCACHE => try rdpc_caps.process_cap_colorcache(self, ins),
+                c.CAPSTYPE_SOUND => try rdpc_caps.process_cap_sound(self, ins),
+                c.CAPSTYPE_INPUT => try rdpc_caps.process_cap_input(self, ins),
+                c.CAPSTYPE_FONT => try rdpc_caps.process_cap_font(self, ins),
+                c.CAPSTYPE_BRUSH => try rdpc_caps.process_cap_brush(self, ins),
+                c.CAPSTYPE_GLYPHCACHE => try rdpc_caps.process_cap_glyphcache(self, ins),
+                c.CAPSTYPE_OFFSCREENCACHE => try rdpc_caps.process_cap_offscreencache(self, ins),
+                c.CAPSTYPE_BITMAPCACHE_HOSTSUPPORT => try rdpc_caps.process_cap_bitmapcache_host(self, ins),
+                c.CAPSTYPE_BITMAPCACHE_REV2 => try rdpc_caps.process_cap_bitmapcache_rev2(self, ins),
+                c.CAPSTYPE_VIRTUALCHANNEL => try rdpc_caps.process_cap_virtualchannel(self, ins),
+                c.CAPSTYPE_DRAWNINEGRIDCACHE => try rdpc_caps.process_cap_drawninegridchache(self, ins),
+                c.CAPSTYPE_DRAWGDIPLUS => try rdpc_caps.process_cap_drawgdiplus(self, ins),
+                c.CAPSTYPE_RAIL => try rdpc_caps.process_cap_rail(self, ins),
+                c.CAPSTYPE_WINDOW => try rdpc_caps.process_cap_window(self, ins),
+                c.CAPSETTYPE_COMPDESK => try rdpc_caps.process_cap_compdesk(self, ins),
+                c.CAPSETTYPE_MULTIFRAGMENTUPDATE => try rdpc_caps.process_cap_multifragmentupdate(self, ins),
+                c.CAPSETTYPE_LARGE_POINTER => try rdpc_caps.process_cap_large_pointer(self, ins),
+                c.CAPSETTYPE_SURFACE_COMMANDS => try rdpc_caps.process_cap_surface_commands(self, ins),
+                c.CAPSETTYPE_BITMAP_CODECS => try rdpc_caps.process_cap_bitmap_codecs(self, ins),
+                c.CAPSSETTYPE_FRAME_ACKNOWLEDGE => try rdpc_caps.process_cap_frame_ack(self, ins),
+                else => _ = self.priv.logln(@src(), "unknown cap_type {}", .{cap_type}),
+            }
+        }
+        _ = self.priv.logln(@src(),"s.offset {} s.data.len {}", .{s.offset, s.data.len});
+    }
+
+    //*************************************************************************
+    // in
+    fn process_rdp_data(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_rdp_fastpath_pdu(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_rdp_channel_pdu(self: *rdpc_msg_t,
+            s: *parse.parse_t) !void
+    {
+        _ = self.priv.logln(@src(), "", .{});
+        _ = s;
     }
 
 };
@@ -597,139 +754,6 @@ fn mcs_in_domain_params(s: *parse.parse_t) !void
 }
 
 //*********************************************************************************
-pub fn utf8_to_u32_array(utf8_in: []const u8, utf32_out: *std.ArrayList(u32)) !void
-{
-    var in_index: usize = 0;
-    const in_count = utf8_in.len;
-    while (in_index < in_count)
-    {
-        var chr21: u21 = undefined;
-        const in_bytes =
-                try std.unicode.utf8ByteSequenceLength(utf8_in[in_index]);
-        if (in_index + in_bytes > in_count)
-        {
-            return error.Unexpected;
-        }
-        const in_start = in_index;
-        const in_end = in_start + in_bytes;
-        chr21 = switch (in_bytes)
-        {
-            1 => utf8_in[in_index],
-            2 => try std.unicode.utf8Decode2(utf8_in[in_start..in_end]),
-            3 => try std.unicode.utf8Decode3(utf8_in[in_start..in_end]),
-            4 => try std.unicode.utf8Decode4(utf8_in[in_start..in_end]),
-            else => return error.Unexpected,
-        };
-        in_index += in_bytes;
-        try utf32_out.append(chr21);
-    }
-    // remove any trailing zeros
-    while ((utf32_out.items.len > 0) and
-            (utf32_out.items[utf32_out.items.len - 1] == 0))
-    {
-        utf32_out.items.len -= 1;
-    }
-}
-
-//*********************************************************************************
-pub fn utf16_to_u32_array(utf16_in: []const u16, utf32_out: *std.ArrayList(u32)) !void
-{
-    var in_index: usize = 0;
-    const in_count = utf16_in.len;
-    while (in_index < in_count)
-    {
-        var chr21: u21 = undefined;
-        const in_shorts =
-                try std.unicode.utf16CodeUnitSequenceLength(utf16_in[in_index]);
-        if (in_index + in_shorts > in_count)
-        {
-            return error.Unexpected;
-        }
-        const in_start = in_index;
-        const in_end = in_start + in_shorts;
-        chr21 = switch (in_shorts)
-        {
-            1 => utf16_in[in_index],
-            2 => try std.unicode.utf16DecodeSurrogatePair(utf16_in[in_start..in_end]),
-            else => return error.Unexpected,
-        };
-        in_index += in_shorts;
-        try utf32_out.append(chr21);
-    }
-    // remove any trailing zeros
-    while ((utf32_out.items.len > 0) and
-            (utf32_out.items[utf32_out.items.len - 1] == 0))
-    {
-        utf32_out.items.len -= 1;
-    }
-}
-
-//*********************************************************************************
-pub fn u32_array_to_utf16Z_as_u8(u32_array: *std.ArrayList(u32),
-        utf16_as_u8: []u8, bytes_written_out: *usize) !void
-{
-    if ((utf16_as_u8.len >> 1) < 1)
-    {
-        return error.Unexpected;
-    }
-    @memset(utf16_as_u8, 0);
-    bytes_written_out.* = 0;
-    var chr21: u21 = undefined;
-    var out_index: usize = 0;
-    const out_max = (utf16_as_u8.len >> 1) - 1;
-    var in_index: usize = 0;
-    const in_count = u32_array.items.len;
-    while (in_index < in_count) : (in_index += 1)
-    {
-        chr21 = @truncate(u32_array.items[in_index]);
-        if (chr21 < 0x10000)
-        {
-            if (out_index + 1 > out_max)
-            {
-                return error.NoRoom;
-            }
-            utf16_as_u8[out_index * 2] = @truncate(chr21);
-            utf16_as_u8[out_index * 2 + 1] = @truncate(chr21 >> 8);
-            out_index += 1;
-            bytes_written_out.* += 2;
-        }
-        else
-        {
-            if (out_index + 2 > out_max)
-            {
-                return error.NoRoom;
-            }
-            const high = @as(u16, @intCast((chr21 - 0x10000) >> 10)) + 0xD800;
-            const low = @as(u16, @intCast(chr21 & 0x3FF)) + 0xDC00;
-            utf16_as_u8[out_index * 2] = @truncate(low);
-            utf16_as_u8[out_index * 2 + 1] = @truncate(low >> 8);
-            utf16_as_u8[out_index * 2 + 2] = @truncate(high);
-            utf16_as_u8[out_index * 2 + 3] = @truncate(high >> 8);
-            out_index += 2;
-            bytes_written_out.* += 4;
-        }
-    }
-}
-
-//*********************************************************************************
-pub fn utf8_to_utf16Z_as_u8(u32_array: *std.ArrayList(u32),
-        utf8: []const u8, utf16_as_u8: []u8, cbSize: *u16) !void
-{
-    try u32_array.resize(0);
-    try utf8_to_u32_array(utf8, u32_array);
-    var bytes_written_out: usize = 0;
-    if (u32_array_to_utf16Z_as_u8(u32_array, utf16_as_u8,
-            &bytes_written_out)) |_| { } else |err|
-    {
-        if (err != error.NoRoom)
-        {
-            return err;
-        }
-    }
-    cbSize.* = @truncate(bytes_written_out);
-}
-
-//*********************************************************************************
 // 2.2.1.11.1 Client Info PDU Data (CLIENT_INFO_PDU)
 pub fn init_client_info_defaults(msg: *rdpc_msg_t,
         settings: *c.rdpc_settings_t) !void
@@ -744,19 +768,19 @@ pub fn init_client_info_defaults(msg: *rdpc_msg_t,
             c.RDP_INFO_MAXIMIZESHELL;
     var u32_array = std.ArrayList(u32).init(msg.allocator.*);
     defer u32_array.deinit();
-    try utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(&u32_array,
             std.mem.sliceTo(&settings.domain, 0),
             &client_info.Domain, &client_info.cbDomain);
-    try utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(&u32_array,
             std.mem.sliceTo(&settings.username, 0),
             &client_info.UserName, &client_info.cbUserName);
-    try utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(&u32_array,
             std.mem.sliceTo(&settings.password, 0),
             &client_info.Password, &client_info.cbPassword);
-    try utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(&u32_array,
             std.mem.sliceTo(&settings.altshell, 0),
             &client_info.AlternateShell, &client_info.cbAlternateShell);
-    try utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(&u32_array,
             std.mem.sliceTo(&settings.workingdir, 0),
             &client_info.WorkingDir, &client_info.cbWorkingDir);
 }

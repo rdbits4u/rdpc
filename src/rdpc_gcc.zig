@@ -1,5 +1,6 @@
 const std = @import("std");
 const parse = @import("parse");
+const strings = @import("strings");
 const rdpc_priv = @import("rdpc_priv.zig");
 const rdpc_msg = @import("rdpc_msg.zig");
 const c = @cImport(
@@ -57,7 +58,7 @@ pub fn init_gcc_defaults(msg: *rdpc_msg.rdpc_msg_t,
     var u32_array = std.ArrayList(u32).init(msg.allocator.*);
     defer u32_array.deinit();
     var len_u16: u16 = 0;
-    try rdpc_msg.utf8_to_utf16Z_as_u8(&u32_array, &settings.clientname,
+    try strings.utf8_to_utf16Z_as_u8(&u32_array, &settings.clientname,
             &core.clientName, &len_u16);
 
     // CS_SEC

@@ -7,10 +7,10 @@
 #include <rdp_caps.h>
 #include <rdp_constants.h>
 
+#define LIBRDPC_ERROR_NEED_MORE             1
 #define LIBRDPC_ERROR_NONE                  0
-#define LIBRDPC_ERROR_MEMORY                1
-#define LIBRDPC_ERROR_NEED_MORE             2
-#define LIBRDPC_ERROR_PARSE                 3
+#define LIBRDPC_ERROR_MEMORY                -1
+#define LIBRDPC_ERROR_PARSE                 -2
 
 struct rdpc_settings_t
 {
@@ -42,8 +42,8 @@ struct rdpc_t
     struct client_gcc cgcc;
     struct server_gcc sgcc;
     struct TS_INFO_PACKET client_info;
-    struct TS_CAPS_SET ccaps;
-    struct TS_CAPS_SET scaps;
+    struct client_caps ccaps;
+    struct server_caps scaps;
 };
 
 // functions calls into this library

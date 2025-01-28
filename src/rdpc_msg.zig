@@ -495,40 +495,10 @@ pub const rdpc_msg_t = struct
             const ins = try parse.create_from_slice(self.allocator,
                     s.in_u8_slice(cap_len));
             defer ins.delete();
-            switch (cap_type)
-            {
-                c.CAPSTYPE_GENERAL => try rdpc_caps.process_cap_general(self, ins),
-                c.CAPSTYPE_BITMAP => try rdpc_caps.process_cap_bitmap(self, ins),
-                c.CAPSTYPE_ORDER => try rdpc_caps.process_cap_order(self, ins),
-                c.CAPSTYPE_BITMAPCACHE => try rdpc_caps.process_cap_bitmapcache(self, ins),
-                c.CAPSTYPE_CONTROL => try rdpc_caps.process_cap_control(self, ins),
-                c.CAPSTYPE_ACTIVATION => try rdpc_caps.process_cap_activation(self, ins),
-                c.CAPSTYPE_POINTER => try rdpc_caps.process_cap_pointer(self, ins),
-                c.CAPSTYPE_SHARE => try rdpc_caps.process_cap_share(self, ins),
-                c.CAPSTYPE_COLORCACHE => try rdpc_caps.process_cap_colorcache(self, ins),
-                c.CAPSTYPE_SOUND => try rdpc_caps.process_cap_sound(self, ins),
-                c.CAPSTYPE_INPUT => try rdpc_caps.process_cap_input(self, ins),
-                c.CAPSTYPE_FONT => try rdpc_caps.process_cap_font(self, ins),
-                c.CAPSTYPE_BRUSH => try rdpc_caps.process_cap_brush(self, ins),
-                c.CAPSTYPE_GLYPHCACHE => try rdpc_caps.process_cap_glyphcache(self, ins),
-                c.CAPSTYPE_OFFSCREENCACHE => try rdpc_caps.process_cap_offscreencache(self, ins),
-                c.CAPSTYPE_BITMAPCACHE_HOSTSUPPORT => try rdpc_caps.process_cap_bitmapcache_host(self, ins),
-                c.CAPSTYPE_BITMAPCACHE_REV2 => try rdpc_caps.process_cap_bitmapcache_rev2(self, ins),
-                c.CAPSTYPE_VIRTUALCHANNEL => try rdpc_caps.process_cap_virtualchannel(self, ins),
-                c.CAPSTYPE_DRAWNINEGRIDCACHE => try rdpc_caps.process_cap_drawninegridchache(self, ins),
-                c.CAPSTYPE_DRAWGDIPLUS => try rdpc_caps.process_cap_drawgdiplus(self, ins),
-                c.CAPSTYPE_RAIL => try rdpc_caps.process_cap_rail(self, ins),
-                c.CAPSTYPE_WINDOW => try rdpc_caps.process_cap_window(self, ins),
-                c.CAPSETTYPE_COMPDESK => try rdpc_caps.process_cap_compdesk(self, ins),
-                c.CAPSETTYPE_MULTIFRAGMENTUPDATE => try rdpc_caps.process_cap_multifragmentupdate(self, ins),
-                c.CAPSETTYPE_LARGE_POINTER => try rdpc_caps.process_cap_large_pointer(self, ins),
-                c.CAPSETTYPE_SURFACE_COMMANDS => try rdpc_caps.process_cap_surface_commands(self, ins),
-                c.CAPSETTYPE_BITMAP_CODECS => try rdpc_caps.process_cap_bitmap_codecs(self, ins),
-                c.CAPSSETTYPE_FRAME_ACKNOWLEDGE => try rdpc_caps.process_cap_frame_ack(self, ins),
-                else => _ = self.priv.logln(@src(), "unknown cap_type {}", .{cap_type}),
-            }
+            try rdpc_caps.process_cap(self, cap_type, ins);
         }
-        _ = self.priv.logln(@src(),"s.offset {} s.data.len {}", .{s.offset, s.data.len});
+        _ = self.priv.logln(@src(),"s.offset {} s.data.len {}",
+                .{s.offset, s.data.len});
     }
 
     //*************************************************************************

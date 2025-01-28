@@ -3,6 +3,7 @@ const parse = @import("parse");
 const hexdump = @import("hexdump");
 const rdpc_msg = @import("rdpc_msg.zig");
 const rdpc_gcc = @import("rdpc_gcc.zig");
+const rdpc_caps = @import("rdpc_caps.zig");
 const c = @cImport(
 {
     @cInclude("librdpc.h");
@@ -408,8 +409,10 @@ pub fn create(allocator: *const std.mem.Allocator,
     errdefer allocator.destroy(priv.sub);
     priv.sub.* = .{};
     priv.msg = try rdpc_msg.create(allocator, priv);
+    errdefer priv.msg.delete();
     // priv.msg gets initalized in create
     try rdpc_gcc.init_gcc_defaults(priv.msg, settings);
     try rdpc_msg.init_client_info_defaults(priv.msg, settings);
+    try rdpc_caps.init_caps_defaults(priv.msg, settings);
     return priv;
 }

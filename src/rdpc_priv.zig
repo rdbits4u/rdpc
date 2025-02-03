@@ -403,11 +403,11 @@ pub fn create(allocator: *const std.mem.Allocator,
 {
     const priv: *rdpc_priv_t = try allocator.create(rdpc_priv_t);
     errdefer allocator.destroy(priv);
-    priv.* = .{};
+    priv.* = std.mem.zeroInit(rdpc_priv_t, .{});
     priv.allocator = allocator;
     priv.sub = try allocator.create(rdpc_priv_sub_t);
     errdefer allocator.destroy(priv.sub);
-    priv.sub.* = .{};
+    priv.sub.* = std.mem.zeroInit(rdpc_priv_sub_t, .{});
     priv.msg = try rdpc_msg.create(allocator, priv);
     errdefer priv.msg.delete();
     // priv.msg gets initalized in create

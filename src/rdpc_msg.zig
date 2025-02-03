@@ -452,7 +452,8 @@ pub const rdpc_msg_t = struct
                 .{totallength, pdutype, pdusource});
         switch (pdutype & 0xF)
         {
-            c.SCH_PDUTYPE_DEMANDACTIVEPDU => try process_rdp_demand_active(self, s),
+            c.SCH_PDUTYPE_DEMANDACTIVEPDU =>
+                    try process_rdp_demand_active(self, s),
             c.SCH_PDUTYPE_DATAPDU => try process_rdp_data(self, s),
             else => return error.BadCode,
         }
@@ -475,6 +476,10 @@ pub const rdpc_msg_t = struct
         try s.check_rem(tag_len + 4);
         var tag_text: [4]u8 = undefined;
         std.mem.copyForwards(u8, tag_text[0..4], s.in_u8_slice(tag_len));
+        if (!std.mem.eql(u8, &tag_text, "RDP\x00"))
+        {
+            return error.BadTag;
+        }
         const caps_count = s.in_u32_le();
         _ = self.priv.logln(@src(), "caps_count {} caps_len {}",
                 .{caps_count, caps_len});
@@ -499,6 +504,14 @@ pub const rdpc_msg_t = struct
         }
         _ = self.priv.logln(@src(),"s.offset {} s.data.len {}",
                 .{s.offset, s.data.len});
+    }
+
+    //*************************************************************************
+    fn create_confirm_active(self: *rdpc_msg_t,
+           s: *parse.parse_t) !void
+    {
+        _ = self.priv.logln(@src(), "", .{});
+        _ = s;
     }
 
     //*************************************************************************
@@ -534,8 +547,8 @@ pub const rdpc_msg_t = struct
 pub fn create(allocator: *const std.mem.Allocator,
         priv: *rdpc_priv.rdpc_priv_t) !*rdpc_msg_t
 {
-    const msg: *rdpc_msg_t = try allocator.create(rdpc_msg_t);
-    msg.* = .{};
+    const msg = try allocator.create(rdpc_msg_t);
+    msg.* = std.mem.zeroInit(rdpc_msg_t, .{});
     msg.priv = priv;
     msg.allocator = allocator;
     return msg;

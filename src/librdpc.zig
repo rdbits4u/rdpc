@@ -63,7 +63,7 @@ export fn rdpc_start(rdpc: ?*c.rdpc_t) c_int
     {
         // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
         const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
-        return priv.start();
+        return priv.start() catch c.LIBRDPC_ERROR_MEMORY;
     }
     return c.LIBRDPC_ERROR_PARSE;
 }
@@ -86,7 +86,7 @@ export fn rdpc_process_server_data(rdpc: ?*c.rdpc_t,
             slice.ptr = @ptrCast(adata);
             slice.len = @intCast(bytes);
             const rv: c_int = priv.process_server_slice_data(slice,
-                    bytes_processed);
+                    bytes_processed) catch c.LIBRDPC_ERROR_MEMORY;
             return rv;
         }
     }

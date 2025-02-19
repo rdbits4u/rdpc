@@ -9,7 +9,7 @@ const c = @cImport(
 //*****************************************************************************
 fn process_cap_general(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const gen = &msg.priv.rdpc.scaps.general;
     try s.check_rem(11 * 2 + 2);
     gen.capabilitySetType = s.in_u16_le();
@@ -30,7 +30,7 @@ fn process_cap_general(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_bitmap(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const bitmap = &msg.priv.rdpc.scaps.bitmap;
     try s.check_rem(11 * 2 + 2 + 2 * 2);
     bitmap.capabilitySetType = s.in_u16_le();
@@ -53,7 +53,7 @@ fn process_cap_bitmap(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_order(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const order = &msg.priv.rdpc.scaps.order;
     try s.check_rem(4 + 16 + 4 + 2 * 6 + 32 + 2 * 2 + 2 * 4 + 4 * 2);
     order.capabilitySetType = s.in_u16_le();
@@ -82,7 +82,7 @@ fn process_cap_order(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_pointer(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const pointer = &msg.priv.rdpc.scaps.pointer;
     try s.check_rem(4 + 3 * 2);
     pointer.capabilitySetType = s.in_u16_le();
@@ -95,7 +95,7 @@ fn process_cap_pointer(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_share(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const share = &msg.priv.rdpc.scaps.share;
     try s.check_rem(4 + 2 * 2);
     share.capabilitySetType = s.in_u16_le();
@@ -107,7 +107,7 @@ fn process_cap_share(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_colorcache(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const colortable = &msg.priv.rdpc.scaps.colortable;
     try s.check_rem(4 + 2 * 2);
     colortable.capabilitySetType = s.in_u16_le();
@@ -119,7 +119,7 @@ fn process_cap_colorcache(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_input(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const input = &msg.priv.rdpc.scaps.input;
     try s.check_rem(4 + 2 * 2 + 4 * 4 + 64);
     input.capabilitySetType = s.in_u16_le();
@@ -136,7 +136,7 @@ fn process_cap_input(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_font(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const font = &msg.priv.rdpc.scaps.font;
     try s.check_rem(4);
     font.capabilitySetType = s.in_u16_le();
@@ -151,7 +151,7 @@ fn process_cap_font(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_bitmapcache_host(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const bitmapcache_hostsupport = &msg.priv.rdpc.scaps.bitmapcache_hostsupport;
     try s.check_rem(4 + 1 + 1 + 2);
     bitmapcache_hostsupport.capabilitySetType = s.in_u16_le();
@@ -164,7 +164,7 @@ fn process_cap_bitmapcache_host(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !v
 //*****************************************************************************
 fn process_cap_virtualchannel(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const virtualchannel = &msg.priv.rdpc.scaps.virtualchannel;
     try s.check_rem(4 + 4 + 4);
     virtualchannel.capabilitySetType = s.in_u16_le();
@@ -176,7 +176,7 @@ fn process_cap_virtualchannel(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !voi
 //*****************************************************************************
 fn process_cap_drawgdiplus(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const draw_gdiplus = &msg.priv.rdpc.scaps.draw_gdiplus;
     try s.check_rem(4 + 3 * 4 + 5 * 2 + 4 * 2 + 3 * 2);
     draw_gdiplus.capabilitySetType = s.in_u16_le();
@@ -201,7 +201,7 @@ fn process_cap_drawgdiplus(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_rail(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const rail = &msg.priv.rdpc.scaps.rail;
     try s.check_rem(4 + 4);
     rail.capabilitySetType = s.in_u16_le();
@@ -212,7 +212,7 @@ fn process_cap_rail(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_window(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const windowlist = &msg.priv.rdpc.scaps.windowlist;
     try s.check_rem(4 + 4 + 1 + 2);
     windowlist.capabilitySetType = s.in_u16_le();
@@ -225,7 +225,7 @@ fn process_cap_window(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_compdesk(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const compdesk = &msg.priv.rdpc.scaps.compdesk;
     try s.check_rem(4 + 2);
     compdesk.capabilitySetType = s.in_u16_le();
@@ -236,7 +236,7 @@ fn process_cap_compdesk(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_multifragmentupdate(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const multifragmentupdate = &msg.priv.rdpc.scaps.multifragmentupdate;
     try s.check_rem(4 + 4);
     multifragmentupdate.capabilitySetType = s.in_u16_le();
@@ -247,7 +247,7 @@ fn process_cap_multifragmentupdate(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t)
 //*****************************************************************************
 fn process_cap_large_pointer(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const large_pointer = &msg.priv.rdpc.scaps.large_pointer;
     try s.check_rem(4 + 2);
     large_pointer.capabilitySetType = s.in_u16_le();
@@ -258,7 +258,7 @@ fn process_cap_large_pointer(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_surface_commands(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const surfcmds = &msg.priv.rdpc.scaps.surfcmds;
     try s.check_rem(4 + 2 * 4);
     surfcmds.capabilitySetType = s.in_u16_le();
@@ -270,7 +270,7 @@ fn process_cap_surface_commands(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !v
 //*****************************************************************************
 fn process_cap_bitmap_codecs(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const bitmapcodecs = &msg.priv.rdpc.scaps.bitmapcodecs;
     try s.check_rem(4);
     bitmapcodecs.capabilitySetType = s.in_u16_le();
@@ -280,7 +280,7 @@ fn process_cap_bitmap_codecs(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
         const sbc_max = @sizeOf(@TypeOf(bitmapcodecs.supportedBitmapCodecs));
         var sbc_len = bitmapcodecs.lengthCapability - 4;
         sbc_len = if (sbc_len > sbc_max) sbc_max else sbc_len;
-        _ = msg.priv.logln(@src(), "sbc_max {} sbc_len {}",
+        try msg.priv.logln(@src(), "sbc_max {} sbc_len {}",
                 .{sbc_max, sbc_len});
         try s.check_rem(sbc_len);
         std.mem.copyForwards(u8,
@@ -292,7 +292,7 @@ fn process_cap_bitmap_codecs(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 fn process_cap_frame_ack(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const frame_acknowledge = &msg.priv.rdpc.scaps.frame_acknowledge;
     try s.check_rem(4 + 4);
     frame_acknowledge.capabilitySetType = s.in_u16_le();
@@ -303,7 +303,7 @@ fn process_cap_frame_ack(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 pub fn process_cap(msg: *rdpc_msg.rdpc_msg_t, cap_type: u16, s: *parse.parse_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     switch (cap_type)
     {
         c.CAPSTYPE_GENERAL => try process_cap_general(msg, s),
@@ -325,15 +325,283 @@ pub fn process_cap(msg: *rdpc_msg.rdpc_msg_t, cap_type: u16, s: *parse.parse_t) 
         c.CAPSETTYPE_SURFACE_COMMANDS => try process_cap_surface_commands(msg, s),
         c.CAPSETTYPE_BITMAP_CODECS => try process_cap_bitmap_codecs(msg, s),
         c.CAPSSETTYPE_FRAME_ACKNOWLEDGE => try process_cap_frame_ack(msg, s),
-        else => _ = msg.priv.logln(@src(), "unknown cap_type {}", .{cap_type}),
+        else => try msg.priv.logln(@src(), "unknown cap_type {}", .{cap_type}),
     }
+}
+
+//*********************************************************************************
+pub fn out_cap_general(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const general = &ccaps.general;
+    if (general.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(11 * 2 + 2);
+        s.push_layer(4, 5);
+        s.out_u16_le(general.osMajorType);
+        s.out_u16_le(general.osMinorType);
+        s.out_u16_le(general.protocolVersion);
+        s.out_u16_le(general.pad2octetsA);
+        s.out_u16_le(general.compressionTypes);
+        s.out_u16_le(general.extraFlags);
+        s.out_u16_le(general.updateCapabilityFlag);
+        s.out_u16_le(general.remoteUnshareFlag);
+        s.out_u16_le(general.compressionLevel);
+        s.out_u8(general.refreshRectSupport);
+        s.out_u8(general.suppressOutputSupport);
+        s.push_layer(0, 6);
+        general.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(general.capabilitySetType);
+        s.out_u16_le(general.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_bitmap(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const bitmap = &ccaps.bitmap;
+    if (bitmap.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(11 * 2 + 2 + 2 * 2);
+        s.push_layer(4, 5);
+        s.out_u16_le(bitmap.preferredBitsPerPixel);
+        s.out_u16_le(bitmap.receive1BitPerPixel);
+        s.out_u16_le(bitmap.receive4BitsPerPixel);
+        s.out_u16_le(bitmap.receive8BitsPerPixel);
+        s.out_u16_le(bitmap.desktopWidth);
+        s.out_u16_le(bitmap.desktopHeight);
+        s.out_u16_le(bitmap.pad2octets);
+        s.out_u16_le(bitmap.desktopResizeFlag);
+        s.out_u16_le(bitmap.bitmapCompressionFlag);
+        s.out_u8(bitmap.highColorFlags);
+        s.out_u8(bitmap.drawingFlags);
+        s.out_u16_le(bitmap.multipleRectangleSupport);
+        s.out_u16_le(bitmap.pad2octetsB);
+        s.push_layer(0, 6);
+        bitmap.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(bitmap.capabilitySetType);
+        s.out_u16_le(bitmap.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_order(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const order = &ccaps.order;
+    if (order.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(4 + 16 + 4 + 6 * 2 + 32 + 2 * 2 + 4 * 2 + 2 * 4);
+        s.push_layer(4, 5);
+        s.out_u8_slice(&order.terminalDescriptor);
+        s.out_u32_le(order.pad4octetsA);
+        s.out_u16_le(order.desktopSaveXGranularity);
+        s.out_u16_le(order.desktopSaveYGranularity);
+        s.out_u16_le(order.pad2octetsA);
+        s.out_u16_le(order.maximumOrderLevel);
+        s.out_u16_le(order.numberFonts);
+        s.out_u16_le(order.orderFlags);
+        s.out_u8_slice(&order.orderSupport);
+        s.out_u16_le(order.textFlags);
+        s.out_u16_le(order.orderSupportExFlags);
+        s.out_u32_le(order.pad4octetsB);
+        s.out_u32_le(order.desktopSaveSize);
+        s.out_u16_le(order.pad2octetsC);
+        s.out_u16_le(order.pad2octetsD);
+        s.out_u16_le(order.textANSICodePage);
+        s.out_u16_le(order.pad2octetsE);
+        s.push_layer(0, 6);
+        order.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(order.capabilitySetType);
+        s.out_u16_le(order.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_pointer(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const pointer = &ccaps.pointer;
+    if (pointer.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(5 * 2);
+        s.push_layer(4, 5);
+        s.out_u16_le(pointer.colorPointerFlag);
+        s.out_u16_le(pointer.colorPointerCacheSize);
+        s.out_u16_le(pointer.pointerCacheSize);
+        s.push_layer(0, 6);
+        pointer.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(pointer.capabilitySetType);
+        s.out_u16_le(pointer.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_share(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const share = &ccaps.share;
+    if (share.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(4 * 2);
+        s.push_layer(4, 5);
+        s.out_u16_le(share.nodeID);
+        s.out_u16_le(share.pad2octets);
+        s.push_layer(0, 6);
+        share.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(share.capabilitySetType);
+        s.out_u16_le(share.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_font(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const font = &ccaps.font;
+    if (font.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(4 * 2);
+        s.push_layer(4, 5);
+        s.out_u16_le(font.fontSupportFlags);
+        s.out_u16_le(font.pad2octets);
+        s.push_layer(0, 6);
+        font.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(font.capabilitySetType);
+        s.out_u16_le(font.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_input(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const input = &ccaps.input;
+    if (input.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(4 * 2 + 4 * 4 + 64);
+        s.push_layer(4, 5);
+        s.out_u16_le(input.inputFlags);
+        s.out_u16_le(input.pad2octetsA);
+        s.out_u32_le(input.keyboardLayout);
+        s.out_u32_le(input.keyboardType);
+        s.out_u32_le(input.keyboardSubType);
+        s.out_u32_le(input.keyboardFunctionKey);
+        s.out_u8_slice(&input.imeFileName);
+        s.push_layer(0, 6);
+        input.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(input.capabilitySetType);
+        s.out_u16_le(input.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_multifrag(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const multifrag = &ccaps.multifragmentupdate;
+    if (multifrag.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(2 * 2 + 4);
+        s.push_layer(4, 5);
+        s.out_u32_le(multifrag.MaxRequestSize);
+        s.push_layer(0, 6);
+        multifrag.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(multifrag.capabilitySetType);
+        s.out_u16_le(multifrag.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_largepointer(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const largepointer = &ccaps.large_pointer;
+    if (largepointer.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(3 * 2);
+        s.push_layer(4, 5);
+        s.out_u16_le(largepointer.largePointerSupportFlags);
+        s.push_layer(0, 6);
+        largepointer.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(largepointer.capabilitySetType);
+        s.out_u16_le(largepointer.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
+}
+
+//*********************************************************************************
+pub fn out_cap_frameack(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
+{
+    const ccaps = &msg.priv.rdpc.ccaps;
+    const frameack = &ccaps.frame_acknowledge;
+    if (frameack.capabilitySetType != 0)
+    {
+        try msg.priv.logln(@src(), "present", .{});
+        try s.check_rem(2 * 2 + 4);
+        s.push_layer(4, 5);
+        s.out_u32_le(frameack.maxUnacknowledgedFrameCount);
+        s.push_layer(0, 6);
+        frameack.lengthCapability = s.layer_subtract(6, 5);
+        s.pop_layer(5);
+        s.out_u16_le(frameack.capabilitySetType);
+        s.out_u16_le(frameack.lengthCapability);
+        s.pop_layer(6);
+        return 1;
+    }
+    return 0;
 }
 
 //*********************************************************************************
 pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
         settings: *c.rdpc_settings_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
 
     const ccaps = &msg.priv.rdpc.ccaps;
     const rdpc = &msg.priv.rdpc;

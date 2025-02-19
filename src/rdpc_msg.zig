@@ -9,13 +9,42 @@ const c = @cImport(
     @cInclude("librdpc.h");
 });
 
+const MsgError = error
+{
+    BadTag,
+    BadCode,
+    BadUser,
+    BadResult,
+    BadSize,
+    BadVersion,
+    BadLength,
+    BadParse,
+    BadMemory,
+};
+
+//*****************************************************************************
+fn rv_to_err(rv: c_int) !void
+{
+    switch (rv)
+    {
+        c.LIBRDPC_ERROR_MEMORY => return MsgError.BadMemory,
+        c.LIBRDPC_ERROR_PARSE => return MsgError.BadParse,
+        else => return,
+    }
+}
+
+//*****************************************************************************
+inline fn err_if(b: bool, err: MsgError) !void
+{
+    if (b) return err else return;
+}
+
 pub const rdpc_msg_t = struct
 {
     allocator: *const std.mem.Allocator = undefined,
     mcs_userid: u16 = 0,
     mcs_channels_joined: u16 = 0,
     rdp_share_id: u32 = 0,
-    pad0: i32 = 0,
     priv: *rdpc_priv.rdpc_priv_t = undefined,
 
     //*************************************************************************
@@ -30,7 +59,7 @@ pub const rdpc_msg_t = struct
     pub fn connection_request(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(19);
         s.push_layer(5, 0);
         s.out_u8(c.ISO_PDU_CR); // Connection Request - 0xE0
@@ -59,14 +88,12 @@ pub const rdpc_msg_t = struct
     pub fn connection_confirm(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(6);
         s.in_u8_skip(5);
         const code = s.in_u8();
-        if (code != c.ISO_PDU_CC) // Connection Confirm - 0xD0
-        {
-            return error.BadTag;
-        }
+        // Connection Confirm - 0xD0
+        try err_if(code != c.ISO_PDU_CC, MsgError.BadCode);
     }
 
     //*************************************************************************
@@ -76,7 +103,7 @@ pub const rdpc_msg_t = struct
     pub fn conference_create_request(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         const gccs = try parse.create(self.allocator, 1024);
         defer gccs.delete();
         try rdpc_gcc.gcc_out_data(self, gccs);
@@ -109,12 +136,9 @@ pub const rdpc_msg_t = struct
         s.push_layer(0, 3); // save end
         // update MCS_CONNECT_INITIAL
         const length_after = s.layer_subtract(3, 2);
-        if (length_after < 0x80)
-        {
-            // length_after must be >= 0x80 or above space for
-            // MCS_CONNECT_INITIAL will be wrong
-            return error.BadSize;
-        }
+        // length_after must be >= 0x80 or above space for
+        // MCS_CONNECT_INITIAL will be wrong
+        try err_if(length_after < 0x80, MsgError.BadSize);
         s.pop_layer(1);
         try ber_out_header(s, c.MCS_CONNECT_INITIAL, length_after);
         s.pop_layer(0); // go to iso header
@@ -129,7 +153,7 @@ pub const rdpc_msg_t = struct
     pub fn conference_create_response(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         var length: u16 = undefined;
         try iso_in_data_header(s, &length);
         try s.check_rem(length - 7);
@@ -142,10 +166,7 @@ pub const rdpc_msg_t = struct
         {
             result = (result << 8) | s.in_u8();
         }
-        if (result != 0)
-        {
-            return error.BadResult;
-        }
+        try err_if(result != 0, MsgError.BadResult);
         try ber_in_header(s, c.BER_TAG_INTEGER, &length);
         try s.check_rem(length);
         result = 0;
@@ -153,10 +174,7 @@ pub const rdpc_msg_t = struct
         {
             result = (result << 8) | s.in_u8();
         }
-        if (result != 0)
-        {
-            return error.BadResult;
-        }
+        try err_if(result != 0, MsgError.BadResult);
         try mcs_in_domain_params(s);
         try ber_in_header(s, c.BER_TAG_OCTET_STRING, &length);
         try s.check_rem(length);
@@ -172,7 +190,7 @@ pub const rdpc_msg_t = struct
     pub fn erect_domain_request(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(7 + 5);
         s.push_layer(7, 0);
         s.out_u8(c.MCS_EDRQ << 2); // Erect Domain Request(1) << 2
@@ -190,7 +208,7 @@ pub const rdpc_msg_t = struct
     pub fn attach_user_request(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(7 + 1);
         s.push_layer(7, 0);
         s.out_u8(c.MCS_AURQ << 2); // Attach User Request(10) << 2
@@ -206,32 +224,19 @@ pub const rdpc_msg_t = struct
     pub fn attach_user_confirm(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         var length: u16 = undefined;
         try iso_in_data_header(s, &length);
         try s.check_rem(length - 7);
         try s.check_rem(1);
         const opcode = s.in_u8(); // Attach User Confirm(11) << 2
-        if ((opcode >> 2) != c.MCS_AUCF)
-        {
-            return error.BadCode;
-        }
-        if ((opcode & 2) != 0)
-        {
-            try s.check_rem(1);
-            const result = s.in_u8();
-            if (result != 0)
-            {
-                return error.BadCode;
-            }
-            try s.check_rem(2);
-            self.mcs_userid = s.in_u16_be();
-            _ = self.priv.logln(@src(), "mcs_userid {}", .{self.mcs_userid});
-        }
-        else
-        {
-            return error.BadCode;
-        }
+        try err_if((opcode >> 2) != c.MCS_AUCF, MsgError.BadCode);
+        try err_if((opcode & 2) == 0, MsgError.BadCode);
+        try s.check_rem(1);
+        try err_if(s.in_u8() != 0, MsgError.BadResult);
+        try s.check_rem(2);
+        self.mcs_userid = s.in_u16_be();
+        try self.priv.logln(@src(), "mcs_userid {}", .{self.mcs_userid});
     }
 
     //*************************************************************************
@@ -240,7 +245,7 @@ pub const rdpc_msg_t = struct
     pub fn channel_join_request(self: *rdpc_msg_t,
             s: *parse.parse_t, chanid: u16) !void
     {
-        _ = self.priv.logln(@src(), "chanid {}", .{chanid});
+        try self.priv.logln(@src(), "chanid {}", .{chanid});
         try s.check_rem(7 + 5);
         s.push_layer(7, 0);
         s.out_u8(c.MCS_CJRQ << 2); // Channel Join Request(14) << 2
@@ -258,38 +263,22 @@ pub const rdpc_msg_t = struct
     pub fn channel_join_confirm(self: *rdpc_msg_t,
             s: *parse.parse_t, chanid: *u16) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         var length: u16 = undefined;
         try iso_in_data_header(s, &length);
         try s.check_rem(length - 7);
         try s.check_rem(1);
         const opcode = s.in_u8(); // Channel Join Confirm(15) << 2
-        if ((opcode >> 2) != c.MCS_CJCF)
-        {
-            return error.BadCode;
-        }
-        if ((opcode & 2) != 0)
-        {
-            try s.check_rem(1);
-            const result = s.in_u8();
-            if (result != 0)
-            {
-                return error.BadCode;
-            }
-            try s.check_rem(2);
-            const mcs_userid = s.in_u16_be();
-            if (self.mcs_userid != mcs_userid)
-            {
-                return error.BadUser;
-            }
-            try s.check_rem(2);
-            chanid.* = s.in_u16_be();
-            _ = self.priv.logln(@src(), "chanid {}", .{chanid.*});
-        }
-        else
-        {
-            return error.BadCode;
-        }
+        try err_if((opcode >> 2) != c.MCS_CJCF, MsgError.BadCode);
+        try err_if((opcode & 2) == 0, MsgError.BadCode);
+        try s.check_rem(1);
+        try err_if(s.in_u8() != 0, MsgError.BadResult);
+        try s.check_rem(2);
+        const mcs_userid = s.in_u16_be();
+        try err_if(self.mcs_userid != mcs_userid, MsgError.BadUser);
+        try s.check_rem(2);
+        chanid.* = s.in_u16_be();
+        try self.priv.logln(@src(), "chanid {}", .{chanid.*});
     }
 
     //*************************************************************************
@@ -298,7 +287,7 @@ pub const rdpc_msg_t = struct
     pub fn security_exchange(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(1024);
         // skip for now
     }
@@ -309,7 +298,7 @@ pub const rdpc_msg_t = struct
     pub fn client_info(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         const ci = self.priv.rdpc.client_info;
         try s.check_rem(7);
         s.push_layer(7, 0); // iso
@@ -366,25 +355,22 @@ pub const rdpc_msg_t = struct
     pub fn process_sec(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         var length: u16 = 0;
         try iso_in_data_header(s, &length);
         try s.check_rem(length - 7);
-        _ = self.priv.logln(@src(), "iso length {}", .{length});
+        try self.priv.logln(@src(), "iso length {}", .{length});
         var userid: u16 = 0;
         var channel: u16 = 0;
         try mcs_in_header(s, &length, &userid, &channel);
         try s.check_rem(length);
-        _ = self.priv.logln(@src(), "mcs length {} userid {} channel {}",
+        try self.priv.logln(@src(), "mcs length {} userid {} channel {}",
                 .{length, userid, channel});
         const flags = s.in_u16_le();
         const flagshi = s.in_u16_le();
-        _ = self.priv.logln(@src(), "sec flags 0x{X} sec flagshi 0x{X}",
+        try self.priv.logln(@src(), "sec flags 0x{X} sec flagshi 0x{X}",
                 .{flags, flagshi});
-        if ((flags & c.SEC_LICENCE_NEG) == 0)
-        {
-            return error.BadCode;
-        }
+        try err_if((flags & c.SEC_LICENCE_NEG) == 0, MsgError.BadCode);
     }
 
     //*************************************************************************
@@ -392,7 +378,7 @@ pub const rdpc_msg_t = struct
     pub fn process_rdp(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(1);
         s.push_layer(0, 0);
         const code = s.in_u8();
@@ -405,17 +391,14 @@ pub const rdpc_msg_t = struct
         var length: u16 = 0;
         try iso_in_data_header(s, &length);
         try s.check_rem(length - 7);
-        _ = self.priv.logln(@src(), "iso length {}", .{length});
+        try self.priv.logln(@src(), "iso length {}", .{length});
         var userid: u16 = 0;
         var channel: u16 = 0;
         try mcs_in_header(s, &length, &userid, &channel);
         try s.check_rem(length);
-        _ = self.priv.logln(@src(), "mcs length {} userid {} channel {}",
+        try self.priv.logln(@src(), "mcs length {} userid {} channel {}",
                 .{length, userid, channel});
-        if (userid != self.mcs_userid)
-        {
-            return error.BadCode;
-        }
+        try err_if(userid != self.mcs_userid, MsgError.BadUser);
         if (channel != c.MCS_GLOBAL_CHANNEL)
         {
             return process_rdp_channel_pdu(self, s);
@@ -424,10 +407,7 @@ pub const rdpc_msg_t = struct
         {
             s.push_layer(0, 0);
             const totallength = s.in_u16_le();
-            if (totallength < 6)
-            {
-                return error.BadLength;
-            }
+            try err_if(totallength < 6, MsgError.BadLength);
             try s.check_rem(totallength - 2);
             s.pop_layer(0);
             const ins = try parse.create_from_slice(self.allocator,
@@ -442,12 +422,12 @@ pub const rdpc_msg_t = struct
     fn process_rdp_pdu(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(6);
         const totallength = s.in_u16_le();
         const pdutype = s.in_u16_le();
         const pdusource = s.in_u16_le();
-        _ = self.priv.logln(@src(),
+        try self.priv.logln(@src(),
                 "rdp totallength 0x{X} sec pdutype 0x{X} pdusource 0x{X}",
                 .{totallength, pdutype, pdusource});
         switch (pdutype & 0xF)
@@ -455,7 +435,7 @@ pub const rdpc_msg_t = struct
             c.SCH_PDUTYPE_DEMANDACTIVEPDU =>
                     try process_rdp_demand_active(self, s),
             c.SCH_PDUTYPE_DATAPDU => try process_rdp_data(self, s),
-            else => return error.BadCode,
+            else => return MsgError.BadCode,
         }
     }
 
@@ -464,24 +444,18 @@ pub const rdpc_msg_t = struct
     fn process_rdp_demand_active(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         try s.check_rem(8);
         self.rdp_share_id = s.in_u32_le();
         const tag_len = s.in_u16_le();
         const caps_len = s.in_u16_le();
-        if (tag_len != 4)
-        {
-            return error.BadTag;
-        }
+        try err_if(tag_len != 4, MsgError.BadLength);
         try s.check_rem(tag_len + 4);
         var tag_text: [4]u8 = undefined;
-        std.mem.copyForwards(u8, tag_text[0..4], s.in_u8_slice(tag_len));
-        if (!std.mem.eql(u8, &tag_text, "RDP\x00"))
-        {
-            return error.BadTag;
-        }
+        std.mem.copyForwards(u8, &tag_text, s.in_u8_slice(tag_len));
+        try err_if(!std.mem.eql(u8, &tag_text, "RDP\x00"), MsgError.BadTag);
         const caps_count = s.in_u32_le();
-        _ = self.priv.logln(@src(), "caps_count {} caps_len {}",
+        try self.priv.logln(@src(), "caps_count {} caps_len {}",
                 .{caps_count, caps_len});
         try s.check_rem(caps_len);
         var cap_type: u16 = undefined;
@@ -492,7 +466,7 @@ pub const rdpc_msg_t = struct
             s.push_layer(0, 0);
             cap_type = s.in_u16_le();
             cap_len = s.in_u16_le();
-            _ = self.priv.logln(@src(),
+            try self.priv.logln(@src(),
                     "index {} cap_type {} cap_len {}",
                     .{index, cap_type, cap_len});
             try s.check_rem(cap_len - 4);
@@ -502,16 +476,80 @@ pub const rdpc_msg_t = struct
             defer ins.delete();
             try rdpc_caps.process_cap(self, cap_type, ins);
         }
-        _ = self.priv.logln(@src(),"s.offset {} s.data.len {}",
+        try self.priv.logln(@src(),"s.offset {} s.data.len {}",
                 .{s.offset, s.data.len});
+
+        try send_confirm_active(self);
+        try send_synchronize(self);
     }
 
     //*************************************************************************
-    fn create_confirm_active(self: *rdpc_msg_t,
-           s: *parse.parse_t) !void
+    fn send_confirm_active(self: *rdpc_msg_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
-        _ = s;
+        try self.priv.logln(@src(), "", .{});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 2 + 2 + 2 + 4 + 2 + 2 + 2 + 4 + 4);
+        s.push_layer(7, 0);
+        s.push_layer(8, 1);
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_CONFIRMACTIVEPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        // insert originator ID, hardcoded by spec to 0x03EA
+        s.out_u16_le(0x03EA);
+        // insert length of string "MSTC"
+        s.out_u16_le(4);
+        // insert combined cap length; we do this later
+        s.push_layer(2, 3);
+        // insert source descriptor
+        s.out_u8_slice("MSTC");
+        // insert number of capabilities + pad2octets
+        s.push_layer(4, 4);
+        var total_caps: u16 = 0;
+        total_caps += try rdpc_caps.out_cap_general(self, s);
+        total_caps += try rdpc_caps.out_cap_bitmap(self, s);
+        total_caps += try rdpc_caps.out_cap_order(self, s);
+        total_caps += try rdpc_caps.out_cap_pointer(self, s);
+        total_caps += try rdpc_caps.out_cap_share(self, s);
+        total_caps += try rdpc_caps.out_cap_font(self, s);
+        total_caps += try rdpc_caps.out_cap_input(self, s);
+        total_caps += try rdpc_caps.out_cap_multifrag(self, s);
+        total_caps += try rdpc_caps.out_cap_largepointer(self, s);
+        total_caps += try rdpc_caps.out_cap_frameack(self, s);
+        // save end
+        s.push_layer(0, 5);
+        // number of caps
+        s.pop_layer(4);
+        s.out_u16_le(total_caps);
+        s.out_u16_le(0);
+        // combined cap length
+        s.pop_layer(3);
+        s.out_u16_le(s.layer_subtract(5, 3));
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try rv_to_err(rv);
+    }
+
+    //*************************************************************************
+    fn send_synchronize(self: *rdpc_msg_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
     }
 
     //*************************************************************************
@@ -519,7 +557,7 @@ pub const rdpc_msg_t = struct
     fn process_rdp_data(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         _ = s;
     }
 
@@ -528,7 +566,7 @@ pub const rdpc_msg_t = struct
     fn process_rdp_fastpath_pdu(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         _ = s;
     }
 
@@ -537,7 +575,7 @@ pub const rdpc_msg_t = struct
     fn process_rdp_channel_pdu(self: *rdpc_msg_t,
             s: *parse.parse_t) !void
     {
-        _ = self.priv.logln(@src(), "", .{});
+        try self.priv.logln(@src(), "", .{});
         _ = s;
     }
 
@@ -595,10 +633,7 @@ fn ber_in_header(s: *parse.parse_t, tagval: u16, length: *u16) !void
         try s.check_rem(1);
         ltagval = s.in_u8();
     }
-    if (ltagval != tagval)
-    {
-        return error.BadTag;
-    }
+    try err_if(ltagval != tagval, MsgError.BadTag);
     try s.check_rem(1);
     llength = s.in_u8();
     if ((llength & 0x80) != 0)
@@ -615,7 +650,7 @@ fn ber_in_header(s: *parse.parse_t, tagval: u16, length: *u16) !void
         }
         else
         {
-            return error.BadParse;
+            return MsgError.BadParse;
         }
     }
     else
@@ -637,7 +672,7 @@ fn iso_out_data_header(s: *parse.parse_t, length: u16) !void
 {
     if (length < 7)
     {
-        return error.BadTag;
+        return MsgError.BadTag;
     }
     s.out_u8(3);            // version
     s.out_u8(0);            // reserved
@@ -651,21 +686,13 @@ fn iso_out_data_header(s: *parse.parse_t, length: u16) !void
 fn iso_in_data_header(s: *parse.parse_t, length: *u16) !void
 {
     try s.check_rem(7);
-    if (s.in_u8() != 3)             // version
-    {
-        return error.BadVersion;
-    }
+    try err_if(s.in_u8() != 3, MsgError.BadVersion);  // version
     s.in_u8_skip(1);                // reserved
     const len = s.in_u16_be();
-    if (len < 7)
-    {
-        return error.BadLength;
-    }
+    try err_if(len < 7, MsgError.BadLength);
     s.in_u8_skip(1);                // hdrlen
-    if (s.in_u8() != c.ISO_PDU_DT)  // code - data 0xF0
-    {
-        return error.BadTag;
-    }
+    // code - data 0xF0
+    try err_if(s.in_u8() != c.ISO_PDU_DT, MsgError.BadTag);
     s.in_u8_skip(1);                // eot
     length.* = len;
 }
@@ -674,10 +701,7 @@ fn iso_in_data_header(s: *parse.parse_t, length: *u16) !void
 fn mcs_out_header(s: *parse.parse_t, length: u16,
         userid: u16, channel: u16) !void
 {
-    if (length < 1)
-    {
-        return error.BadTag;
-    }
+    try err_if(length < 1, MsgError.BadTag);
     s.out_u8(c.MCS_SDRQ << 2);
     s.out_u16_be(userid);
     s.out_u16_be(channel);
@@ -691,17 +715,11 @@ fn mcs_in_header(s: *parse.parse_t, length: *u16,
 {
     try s.check_rem(7);
     const code = s.in_u8();
-    if (code != 0x68)
-    {
-        return error.BadCode;
-    }
+    try err_if(code != 0x68, MsgError.BadCode);
     userid.* = s.in_u16_be();
     channel.* = s.in_u16_be();
     const flags = s.in_u8();
-    if (flags != 0x70)
-    {
-        return error.BadCode;
-    }
+    try err_if(flags != 0x70, MsgError.BadCode);
     var llength: u16 = s.in_u8();
     if ((llength & 0x80) != 0)
     {
@@ -736,12 +754,12 @@ fn mcs_in_domain_params(s: *parse.parse_t) !void
     s.in_u8_skip(length);
 }
 
-//*********************************************************************************
+//*****************************************************************************
 // 2.2.1.11.1 Client Info PDU Data (CLIENT_INFO_PDU)
 pub fn init_client_info_defaults(msg: *rdpc_msg_t,
         settings: *c.rdpc_settings_t) !void
 {
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     const rdpc = &msg.priv.rdpc;
     var client_info = &rdpc.client_info;
     client_info.CodePage = 0;

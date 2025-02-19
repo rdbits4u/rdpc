@@ -35,7 +35,7 @@ pub fn init_gcc_defaults(msg: *rdpc_msg.rdpc_msg_t,
     const sec = &rdpc.cgcc.sec;
     const net = &rdpc.cgcc.net;
 
-    _ = msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln(@src(), "", .{});
     // CS_CORE
     core.header.type = c.CS_CORE;           // 0xC001
     core.header.length = 0;                 // calculated
@@ -348,7 +348,7 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
             {
                 c.SC_CORE => // 0x0C01
                 {
-                    _ = msg.priv.logln(@src(), "SC_CORE", .{});
+                    try msg.priv.logln(@src(), "SC_CORE", .{});
                     core.header.type = tag;
                     core.header.length = tag_len;
                     try ls.check_rem(8);
@@ -357,13 +357,13 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
                 },
                 c.SC_SECURITY => // 0xC02
                 {
-                    _ = msg.priv.logln(@src(), "CS_SECURITY", .{});
+                    try msg.priv.logln(@src(), "CS_SECURITY", .{});
                     sec.header.type = tag;
                     sec.header.length = tag_len;
                     try ls.check_rem(8);
                     sec.encryptionMethod = ls.in_u32_le();
                     sec.encryptionLevel = ls.in_u32_le();
-                    _ = msg.priv.logln(@src(),
+                    try msg.priv.logln(@src(),
                             "CS_SECURITY encryptionMethod {} encryptionLevel {}",
                             .{sec.encryptionMethod, sec.encryptionLevel});
                     // optional after this
@@ -394,28 +394,28 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
                 },
                 c.SC_NET => // 0xC03
                 {
-                    _ = msg.priv.logln(@src(), "SC_NET", .{});
+                    try msg.priv.logln(@src(), "SC_NET", .{});
                     net.header.type = tag;
                     net.header.length = tag_len;
                     try ls.check_rem(4);
                     net.MCSChannelId = ls.in_u16_le();
-                    _ = msg.priv.logln(@src(), "SC_NET MCSChannelId {}",
+                    try msg.priv.logln(@src(), "SC_NET MCSChannelId {}",
                             .{net.MCSChannelId});
                     net.channelCount = ls.in_u16_le();
-                    _ = msg.priv.logln(@src(), "SC_NET channelCount {}",
+                    try msg.priv.logln(@src(), "SC_NET channelCount {}",
                             .{net.channelCount});
                     try ls.check_rem(net.channelCount * 2);
                     for (0..net.channelCount) |index|
                     {
                         net.channelIdArray[index] = ls.in_u16_le();
-                        _ = msg.priv.logln(@src(),
+                        try msg.priv.logln(@src(),
                                 "SC_NET channelIdArray index {} chanid {}",
                                 .{index, net.channelIdArray[index]});
                     }
                 },
                 c.SC_MCS_MSGCHANNEL => // 0x0C04
                 {
-                    _ = msg.priv.logln(@src(), "SC_MCS_MSGCHANNEL", .{});
+                    try msg.priv.logln(@src(), "SC_MCS_MSGCHANNEL", .{});
                     msgchannel.header.type = tag;
                     msgchannel.header.length = tag_len;
                     try ls.check_rem(2);
@@ -423,7 +423,7 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
                 },
                 c.SC_MULTITRANSPORT => // 0x0C08
                 {
-                    _ = msg.priv.logln(@src(), "SC_MULTITRANSPORT", .{});
+                    try msg.priv.logln(@src(), "SC_MULTITRANSPORT", .{});
                     multitransport.header.type = tag;
                     multitransport.header.length = tag_len;
                     try ls.check_rem(4);
@@ -431,7 +431,7 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
                 },
                 else =>
                 {
-                    _ = msg.priv.logln(@src(), "unknown tag 0x{X}", .{tag});
+                    try msg.priv.logln(@src(), "unknown tag 0x{X}", .{tag});
                 }
             }
         }

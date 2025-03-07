@@ -8,6 +8,10 @@ const c = @cImport(
     @cInclude("librdpc.h");
 });
 
+const get_struct_bytes = rdpc_msg.get_struct_bytes;
+const MsgError = rdpc_msg.MsgError;
+const err_if = rdpc_msg.err_if;
+
 //*********************************************************************************
 fn pixels_to_mm(pixels: u32, dpi: i32) u32
 {
@@ -129,9 +133,8 @@ pub fn gcc_out_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
     // CS_CORE
     if (core.header.type != 0)
     {
-        try s.check_rem(24 + core.clientName.len + 12 +
-                core.imeFileName.len + 14 +
-                core.clientDigProductId.len + 24);
+        const struct_bytes = get_struct_bytes(@TypeOf(core.*));
+        try s.check_rem(struct_bytes);
         s.push_layer(4, 1);
         s.out_u32_le(core.version);
         s.out_u16_le(core.desktopWidth);
@@ -162,6 +165,7 @@ pub fn gcc_out_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
         s.out_u32_le(core.deviceScaleFactor);
         s.push_layer(0, 2);
         core.header.length = s.layer_subtract(2, 1);
+        try err_if(struct_bytes != core.header.length, MsgError.BadSize);
         s.pop_layer(1);
         s.out_u16_le(core.header.type);
         s.out_u16_le(core.header.length);
@@ -171,12 +175,14 @@ pub fn gcc_out_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
     // CS_SEC
     if (sec.header.type != 0)
     {
-        try s.check_rem(12);
+        const struct_bytes = get_struct_bytes(@TypeOf(sec.*));
+        try s.check_rem(struct_bytes);
         s.push_layer(4, 1);
         s.out_u32_le(sec.encryptionMethods);
         s.out_u32_le(sec.extEncryptionMethods);
         s.push_layer(0, 2);
         sec.header.length = s.layer_subtract(2, 1);
+        try err_if(struct_bytes != sec.header.length, MsgError.BadSize);
         s.pop_layer(1);
         s.out_u16_le(sec.header.type);
         s.out_u16_le(sec.header.length);
@@ -208,12 +214,14 @@ pub fn gcc_out_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
     // CS_CLUSTER
     if (cluster.header.type != 0)
     {
-        try s.check_rem(12);
+        const struct_bytes = get_struct_bytes(@TypeOf(cluster.*));
+        try s.check_rem(struct_bytes);
         s.push_layer(4, 1);
         s.out_u32_le(cluster.Flags);
         s.out_u32_le(cluster.RedirectedSessionID);
         s.push_layer(0, 2);
         cluster.header.length = s.layer_subtract(2, 1);
+        try err_if(struct_bytes != cluster.header.length, MsgError.BadSize);
         s.pop_layer(1);
         s.out_u16_le(cluster.header.type);
         s.out_u16_le(cluster.header.length);
@@ -250,11 +258,13 @@ pub fn gcc_out_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
     // CS_MCS_MSGCHANNEL
     if (msgchannel.header.type != 0)
     {
-        try s.check_rem(8);
+        const struct_bytes = get_struct_bytes(@TypeOf(msgchannel.*));
+        try s.check_rem(struct_bytes);
         s.push_layer(4, 1);
         s.out_u32_le(msgchannel.flags);
         s.push_layer(0, 2);
         msgchannel.header.length = s.layer_subtract(2, 1);
+        try err_if(struct_bytes != msgchannel.header.length, MsgError.BadSize);
         s.pop_layer(1);
         s.out_u16_le(msgchannel.header.type);
         s.out_u16_le(msgchannel.header.length);
@@ -292,11 +302,13 @@ pub fn gcc_out_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
     // CS_MULTITRANSPORT
     if (multitransport.header.type != 0)
     {
-        try s.check_rem(8);
+        const struct_bytes = get_struct_bytes(@TypeOf(multitransport.*));
+        try s.check_rem(struct_bytes);
         s.push_layer(4, 1);
         s.out_u32_le(multitransport.flags);
         s.push_layer(0, 2);
         multitransport.header.length = s.layer_subtract(2, 1);
+        try err_if(struct_bytes != multitransport.header.length, MsgError.BadSize);
         s.pop_layer(1);
         s.out_u16_le(multitransport.header.type);
         s.out_u16_le(multitransport.header.length);
@@ -336,7 +348,7 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
         const tag_len = s.in_u16_le();
         if (tag_len < 5)
         {
-            return error.BadResult;
+            return MsgError.BadResult;
         }
         try s.check_rem(tag_len - 4);
         // code block for defer

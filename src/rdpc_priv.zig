@@ -53,8 +53,8 @@ pub const rdpc_priv_t = extern struct
         // check if function is assigned
         if (self.rdpc.send_to_server) |asend_to_server|
         {
-            try self.logln(@src(), "hexdump len {}", .{data.len});
-            try hexdump.printHexDump(0, data);
+            //try self.logln(@src(), "hexdump len {}", .{data.len});
+            //try hexdump.printHexDump(0, data);
             // call the c callback
             return asend_to_server(&self.rdpc, data.ptr, @intCast(data.len));
         }
@@ -116,6 +116,10 @@ pub const rdpc_priv_t = extern struct
         }
         if (slice.len < len)
         {
+            try self.logln(@src(),
+                    "returning LIBRDPC_ERROR_NEED_MORE len {} slice.len {}",
+                    .{len, slice.len});
+            try hexdump.printHexDump(0, slice[0..len]);
             return c.LIBRDPC_ERROR_NEED_MORE;
         }
         // check if bytes_processed is nil
@@ -123,8 +127,9 @@ pub const rdpc_priv_t = extern struct
         {
             abytes_processed.* = len;
         }
-        try self.logln(@src(), "hexdump len {}", .{len});
-        try hexdump.printHexDump(0, slice[0..len]);
+        try self.logln(@src(), "len {}", .{len});
+        //try self.logln(@src(), "hexdump len {}", .{len});
+        //try hexdump.printHexDump(0, slice[0..len]);
         return self.sub.state_fn(self, slice[0..len]);
     }
 
@@ -303,11 +308,11 @@ pub fn create(allocator: *const std.mem.Allocator,
 {
     const priv: *rdpc_priv_t = try allocator.create(rdpc_priv_t);
     errdefer allocator.destroy(priv);
-    priv.* = std.mem.zeroInit(rdpc_priv_t, .{});
+    priv.* = .{};
     priv.allocator = allocator;
     priv.sub = try allocator.create(rdpc_priv_sub_t);
     errdefer allocator.destroy(priv.sub);
-    priv.sub.* = std.mem.zeroInit(rdpc_priv_sub_t, .{});
+    priv.sub.* = .{};
     priv.msg = try rdpc_msg.create(allocator, priv);
     errdefer priv.msg.delete();
     // priv.msg gets initalized in create

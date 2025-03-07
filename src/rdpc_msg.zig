@@ -9,7 +9,7 @@ const c = @cImport(
     @cInclude("librdpc.h");
 });
 
-const MsgError = error
+pub const MsgError = error
 {
     BadTag,
     BadCode,
@@ -23,6 +23,12 @@ const MsgError = error
 };
 
 //*****************************************************************************
+pub inline fn err_if(b: bool, err: MsgError) !void
+{
+    if (b) return err else return;
+}
+
+//*****************************************************************************
 fn rv_to_err(rv: c_int) !void
 {
     switch (rv)
@@ -33,10 +39,30 @@ fn rv_to_err(rv: c_int) !void
     }
 }
 
-//*****************************************************************************
-inline fn err_if(b: bool, err: MsgError) !void
+//*********************************************************************************
+/// get the bytes of a structure when streamed, this is not the same as
+/// sizeof(struct)
+pub fn get_struct_bytes(comptime T: type) u16
 {
-    if (b) return err else return;
+    var rv: u16 = 0;
+    switch (@typeInfo(T))
+    {
+        .@"struct" => |struct_info|
+        {
+            inline for (struct_info.fields) |field|
+            {
+                rv += switch (@typeInfo(field.type))
+                {
+                    .@"struct" => get_struct_bytes(field.type),
+                    .int => @sizeOf(field.type),
+                    .array => @sizeOf(field.type),
+                    else => @compileError("bad field type " ++ field.name),
+                };
+            }
+        },
+        else => @compileError("can not get_struct_bytes " ++ @typeName(T)),
+    }
+    return rv;
 }
 
 pub const rdpc_msg_t = struct
@@ -284,8 +310,7 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     // 2.2.1.10 Client Security Exchange PDU
     // out
-    pub fn security_exchange(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    pub fn security_exchange(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         try s.check_rem(1024);
@@ -295,8 +320,7 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     // 2.2.1.11 Client Info PDU
     // out
-    pub fn client_info(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    pub fn client_info(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         const ci = self.priv.rdpc.client_info;
@@ -352,8 +376,7 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    pub fn process_sec(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    pub fn process_sec(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         var length: u16 = 0;
@@ -375,8 +398,7 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    pub fn process_rdp(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    pub fn process_rdp(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         try s.check_rem(1);
@@ -396,7 +418,8 @@ pub const rdpc_msg_t = struct
         var channel: u16 = 0;
         try mcs_in_header(s, &length, &userid, &channel);
         try s.check_rem(length);
-        try self.priv.logln(@src(), "mcs length {} userid {} channel {}",
+        try self.priv.logln(@src(),
+                "mcs length {} userid {} channel {}",
                 .{length, userid, channel});
         try err_if(userid != self.mcs_userid, MsgError.BadUser);
         if (channel != c.MCS_GLOBAL_CHANNEL)
@@ -406,12 +429,13 @@ pub const rdpc_msg_t = struct
         while (s.check_rem_bool(2))
         {
             s.push_layer(0, 0);
-            const totallength = s.in_u16_le();
-            try err_if(totallength < 6, MsgError.BadLength);
-            try s.check_rem(totallength - 2);
+            const pduLength = s.in_u16_le();
+            try self.priv.logln(@src(), "pduLength {}", .{pduLength});
+            try err_if(pduLength < 6, MsgError.BadLength);
+            try s.check_rem(pduLength - 2);
             s.pop_layer(0);
             const ins = try parse.create_from_slice(self.allocator,
-                    s.in_u8_slice(totallength));
+                    s.in_u8_slice(pduLength));
             defer ins.delete();
             try self.process_rdp_pdu(ins);
         }
@@ -419,8 +443,7 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    fn process_rdp_pdu(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    fn process_rdp_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         try s.check_rem(6);
@@ -432,8 +455,7 @@ pub const rdpc_msg_t = struct
                 .{totallength, pdutype, pdusource});
         switch (pdutype & 0xF)
         {
-            c.SCH_PDUTYPE_DEMANDACTIVEPDU =>
-                    try process_rdp_demand_active(self, s),
+            c.SCH_PDUTYPE_DEMANDACTIVEPDU => try process_rdp_demand_active(self, s),
             c.SCH_PDUTYPE_DATAPDU => try process_rdp_data(self, s),
             else => return MsgError.BadCode,
         }
@@ -441,8 +463,7 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    fn process_rdp_demand_active(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    fn process_rdp_demand_active(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         try s.check_rem(8);
@@ -481,9 +502,14 @@ pub const rdpc_msg_t = struct
 
         try send_confirm_active(self);
         try send_synchronize(self);
+        try send_control_cooperate(self);
+        try send_control_req_control(self);
+        try send_client_persistent_key_list(self);
+        try send_client_font_list(self);
     }
 
     //*************************************************************************
+    // out
     fn send_confirm_active(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
@@ -514,12 +540,29 @@ pub const rdpc_msg_t = struct
         total_caps += try rdpc_caps.out_cap_general(self, s);
         total_caps += try rdpc_caps.out_cap_bitmap(self, s);
         total_caps += try rdpc_caps.out_cap_order(self, s);
+        total_caps += try rdpc_caps.out_cap_bitmapcache(self, s);
+        total_caps += try rdpc_caps.out_cap_control(self, s);
+        total_caps += try rdpc_caps.out_cap_windowactivation(self, s);
         total_caps += try rdpc_caps.out_cap_pointer(self, s);
         total_caps += try rdpc_caps.out_cap_share(self, s);
-        total_caps += try rdpc_caps.out_cap_font(self, s);
+        total_caps += try rdpc_caps.out_cap_colortable(self, s);
+        total_caps += try rdpc_caps.out_cap_sound(self, s);
         total_caps += try rdpc_caps.out_cap_input(self, s);
+        total_caps += try rdpc_caps.out_cap_font(self, s);
+        total_caps += try rdpc_caps.out_cap_brush(self, s);
+        total_caps += try rdpc_caps.out_cap_glyphcache(self, s);
+        total_caps += try rdpc_caps.out_cap_offscreen(self, s);
+        total_caps += try rdpc_caps.out_cap_bitmapcache_rev2(self, s);
+        total_caps += try rdpc_caps.out_cap_virtualchannel(self, s);
+        total_caps += try rdpc_caps.out_cap_draw_ninegrid(self, s);
+        total_caps += try rdpc_caps.out_cap_draw_gdiplus(self, s);
+        total_caps += try rdpc_caps.out_cap_rail(self, s);
+        total_caps += try rdpc_caps.out_cap_windowlist(self, s);
+        total_caps += try rdpc_caps.out_cap_compdesk(self, s);
         total_caps += try rdpc_caps.out_cap_multifrag(self, s);
         total_caps += try rdpc_caps.out_cap_largepointer(self, s);
+        total_caps += try rdpc_caps.out_cap_surfcmds(self, s);
+        total_caps += try rdpc_caps.out_cap_bitmapcodecs(self, s);
         total_caps += try rdpc_caps.out_cap_frameack(self, s);
         // save end
         s.push_layer(0, 5);
@@ -541,21 +584,255 @@ pub const rdpc_msg_t = struct
         // iso
         s.pop_layer(0);
         try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
         s.pop_layer(5);
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
         try rv_to_err(rv);
     }
 
     //*************************************************************************
+    // out
     fn send_synchronize(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 2 + 2 + 2 + 4 + 8);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        s.push_layer(18, 2); // rdp data
+
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.RDP_PDUTYPE2_SYNCHRONIZE);   // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try rv_to_err(rv);
+    }
+
+    //*************************************************************************
+    // out
+    fn send_control_cooperate(self: *rdpc_msg_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 2);
+        s.push_layer(7, 0);
+        s.push_layer(8, 1);
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.RDP_PDUTYPE2_CONTROL);       // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        s.out_u16_le(c.RDP_CTRLACTION_COOPERATE);   // action
+        s.out_u16_le(0);                        // grantID
+        s.out_u32_le(0);                        // controlID
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try rv_to_err(rv);
+    }
+
+    //*************************************************************************
+    // out
+    fn send_control_req_control(self: *rdpc_msg_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 2);
+        s.push_layer(7, 0);
+        s.push_layer(8, 1);
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.RDP_PDUTYPE2_CONTROL);       // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        s.out_u16_le(c.RDP_CTRLACTION_REQUEST_CONTROL); // action
+        s.out_u16_le(0);                        // grantID
+        s.out_u32_le(0);                        // controlID
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try rv_to_err(rv);
+    }
+
+    //*************************************************************************
+    // out
+    fn send_client_persistent_key_list(self: *rdpc_msg_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 2);
+        s.push_layer(7, 0);
+        s.push_layer(8, 1);
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.RDP_PDUTYPE2_BITMAPCACHE_PERSISTENT_LIST);   // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        s.out_u16_le(0);                        // numEntriesCache0
+        s.out_u16_le(1);                        // numEntriesCache1
+        s.out_u16_le(2);                        // numEntriesCache2
+        s.out_u16_le(3);                        // numEntriesCache3
+        s.out_u16_le(4);                        // numEntriesCache4
+        s.out_u16_le(0);                        // totalEntriesCache0
+        s.out_u16_le(1);                        // totalEntriesCache1
+        s.out_u16_le(2);                        // totalEntriesCache2
+        s.out_u16_le(3);                        // totalEntriesCache3
+        s.out_u16_le(4);                        // totalEntriesCache4
+        s.out_u8(3);                            // bBitMask
+        s.out_u8_skip(2);                       // padding
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try rv_to_err(rv);
+    }
+
+    //*************************************************************************
+    // out
+    fn send_client_font_list(self: *rdpc_msg_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 2);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.RDP_PDUTYPE2_FONTLIST);      // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        s.out_u16_le(0);                        // numberFonts
+        s.out_u16_le(0);                        // totalNumFonts
+        s.out_u16_le(3);                        // listFlags
+        s.out_u16_le(50);                       // entrysize
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try rv_to_err(rv);
     }
 
     //*************************************************************************
     // in
-    fn process_rdp_data(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    fn process_rdp_data(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         _ = s;
@@ -563,8 +840,7 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    fn process_rdp_fastpath_pdu(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    fn process_rdp_fastpath_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         _ = s;
@@ -572,8 +848,7 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    fn process_rdp_channel_pdu(self: *rdpc_msg_t,
-            s: *parse.parse_t) !void
+    fn process_rdp_channel_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         _ = s;
@@ -586,7 +861,7 @@ pub fn create(allocator: *const std.mem.Allocator,
         priv: *rdpc_priv.rdpc_priv_t) !*rdpc_msg_t
 {
     const msg = try allocator.create(rdpc_msg_t);
-    msg.* = std.mem.zeroInit(rdpc_msg_t, .{});
+    msg.* = .{};
     msg.priv = priv;
     msg.allocator = allocator;
     return msg;

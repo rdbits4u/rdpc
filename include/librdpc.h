@@ -35,7 +35,6 @@ struct rdpc_settings_t
 struct rdpc_t
 {
     // function calls this library makes, assigned by application
-    int (*test1)(void);
     int (*log_msg)(struct rdpc_t* rdpc, const char* msg);
     int (*send_to_server)(struct rdpc_t* rdpc, void* data, int bytes);
     void* user[16];

@@ -9,6 +9,8 @@ const c = @cImport(
     @cInclude("librdpc.h");
 });
 
+const g_devel = false;
+
 // sub struct for assigning functions
 const rdpc_priv_sub_t = struct
 {
@@ -39,11 +41,23 @@ pub const rdpc_priv_t = extern struct
         // check if function is assigned
         if (self.rdpc.log_msg) |alog_msg|
         {
-            const alloc_buf = try std.fmt.allocPrint(self.allocator.*, fmt, args);
+            const alloc_buf = try std.fmt.allocPrint(self.allocator.*,
+                    fmt, args);
             defer self.allocator.free(alloc_buf);
-            const alloc1_buf = try std.fmt.allocPrintZ(self.allocator.*, "{s}:{s}", .{src.fn_name, alloc_buf});
+            const alloc1_buf = try std.fmt.allocPrintZ(self.allocator.*,
+                    "{s}:{s}", .{src.fn_name, alloc_buf});
             defer self.allocator.free(alloc1_buf);
             _ = alog_msg(&self.rdpc, alloc1_buf.ptr);
+        }
+    }
+
+    //*************************************************************************
+    pub fn logln_devel(self: *rdpc_priv_t, src: std.builtin.SourceLocation,
+            comptime fmt: []const u8, args: anytype) !void
+    {
+        if (g_devel)
+        {
+            return self.logln(src, fmt, args);
         }
     }
 
@@ -77,7 +91,7 @@ pub const rdpc_priv_t = extern struct
     pub fn process_server_slice_data(self: *rdpc_priv_t, slice: []u8,
             bytes_processed: ?*c_int) !c_int
     {
-        try self.logln(@src(), "bytes {}", .{slice.len});
+        try self.logln_devel(@src(), "in slice bytes {}", .{slice.len});
         var len: u16 = 0;
         if (slice.len < 2)
         {
@@ -92,6 +106,7 @@ pub const rdpc_priv_t = extern struct
             }
             len = slice[2];
             len = (len << 8) | slice[3];
+            try self.logln_devel(@src(), "RDP PDU TPKT len {}", .{len});
         }
         else
         {
@@ -104,6 +119,8 @@ pub const rdpc_priv_t = extern struct
                 }
                 len = slice[1];
                 len = ((len & 0x7F) << 8) | slice[2];
+                try self.logln_devel(@src(),
+                        "RDP PDU Fast-Path len {}", .{len});
             }
             else
             {
@@ -116,10 +133,11 @@ pub const rdpc_priv_t = extern struct
         }
         if (slice.len < len)
         {
-            try self.logln(@src(),
-                    "returning LIBRDPC_ERROR_NEED_MORE len {} slice.len {}",
+            try self.logln_devel(@src(),
+                    "returning LIBRDPC_ERROR_NEED_MORE len {} " ++
+                    "slice.len {}",
                     .{len, slice.len});
-            try hexdump.printHexDump(0, slice[0..len]);
+            //try hexdump.printHexDump(0, slice[0..len]);
             return c.LIBRDPC_ERROR_NEED_MORE;
         }
         // check if bytes_processed is nil
@@ -127,10 +145,28 @@ pub const rdpc_priv_t = extern struct
         {
             abytes_processed.* = len;
         }
-        try self.logln(@src(), "len {}", .{len});
+        try self.logln_devel(@src(), "len {}", .{len});
         //try self.logln(@src(), "hexdump len {}", .{len});
         //try hexdump.printHexDump(0, slice[0..len]);
         return self.sub.state_fn(self, slice[0..len]);
+    }
+
+    //*************************************************************************
+    pub fn send_mouse_event(self: *rdpc_priv_t, event: u16,
+            xpos: u16, ypos: u16) !c_int
+    {
+        try self.logln_devel(@src(), "event 0x{X} xpos {} ypos {}",
+                .{event, xpos, ypos});
+        if (rdpc_priv_t.state6_fn == self.sub.state_fn)
+        {
+            try self.logln_devel(@src(), "connected", .{});
+            return self.msg.send_mouse_event(event, xpos, ypos);
+        }
+        else
+        {
+            try self.logln(@src(), "not fully connected", .{});
+        }
+        return c.LIBRDPC_ERROR_NONE;
     }
 
     //*************************************************************************
@@ -293,7 +329,7 @@ pub const rdpc_priv_t = extern struct
     //*************************************************************************
     fn state6_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
-        try self.logln(@src(), "", .{});
+        try self.logln_devel(@src(), "", .{});
         const ins = try parse.create_from_slice(self.allocator, slice);
         defer ins.delete();
         try self.msg.process_rdp(ins);
@@ -320,4 +356,10 @@ pub fn create(allocator: *const std.mem.Allocator,
     try rdpc_msg.init_client_info_defaults(priv.msg, settings);
     try rdpc_caps.init_caps_defaults(priv.msg, settings);
     return priv;
+}
+
+//*****************************************************************************
+pub fn error_to_c_int(err: anyerror) c_int
+{
+    return rdpc_msg.error_to_c_int(err);
 }

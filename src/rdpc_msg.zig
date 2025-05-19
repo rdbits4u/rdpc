@@ -20,6 +20,7 @@ pub const MsgError = error
     BadLength,
     BadParse,
     BadMemory,
+    BadSetSurfaceBits,
 };
 
 //*****************************************************************************
@@ -29,13 +30,26 @@ pub inline fn err_if(b: bool, err: MsgError) !void
 }
 
 //*****************************************************************************
-fn rv_to_err(rv: c_int) !void
+pub fn c_int_to_error(rv: c_int) !void
 {
     switch (rv)
     {
         c.LIBRDPC_ERROR_MEMORY => return MsgError.BadMemory,
         c.LIBRDPC_ERROR_PARSE => return MsgError.BadParse,
+        c.LIBRDPC_ERROR_SURFACE => return MsgError.BadSetSurfaceBits,
         else => return,
+    }
+}
+
+//*****************************************************************************
+pub fn error_to_c_int(err: anyerror) c_int
+{
+    switch (err)
+    {
+        MsgError.BadMemory => return c.LIBRDPC_ERROR_MEMORY,
+        MsgError.BadParse => return c.LIBRDPC_ERROR_PARSE,
+        MsgError.BadSetSurfaceBits => return c.LIBRDPC_ERROR_SURFACE,
+        else => return c.LIBRDPC_ERROR_OTHER,
     }
 }
 
@@ -72,10 +86,15 @@ pub const rdpc_msg_t = struct
     mcs_channels_joined: u16 = 0,
     rdp_share_id: u32 = 0,
     priv: *rdpc_priv.rdpc_priv_t = undefined,
+    frag_s: ?*parse.parse_t = null,
 
     //*************************************************************************
     pub fn delete(self: *rdpc_msg_t) void
     {
+        if (self.frag_s) |afrag_s|
+        {
+            afrag_s.delete();
+        }
         self.allocator.destroy(self);
     }
 
@@ -400,7 +419,7 @@ pub const rdpc_msg_t = struct
     // in
     pub fn process_rdp(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(1);
         s.push_layer(0, 0);
         const code = s.in_u8();
@@ -413,12 +432,12 @@ pub const rdpc_msg_t = struct
         var length: u16 = 0;
         try iso_in_data_header(s, &length);
         try s.check_rem(length - 7);
-        try self.priv.logln(@src(), "iso length {}", .{length});
+        try self.priv.logln_devel(@src(), "iso length {}", .{length});
         var userid: u16 = 0;
         var channel: u16 = 0;
         try mcs_in_header(s, &length, &userid, &channel);
         try s.check_rem(length);
-        try self.priv.logln(@src(),
+        try self.priv.logln_devel(@src(),
                 "mcs length {} userid {} channel {}",
                 .{length, userid, channel});
         try err_if(userid != self.mcs_userid, MsgError.BadUser);
@@ -430,7 +449,7 @@ pub const rdpc_msg_t = struct
         {
             s.push_layer(0, 0);
             const pduLength = s.in_u16_le();
-            try self.priv.logln(@src(), "pduLength {}", .{pduLength});
+            try self.priv.logln_devel(@src(), "pduLength {}", .{pduLength});
             try err_if(pduLength < 6, MsgError.BadLength);
             try s.check_rem(pduLength - 2);
             s.pop_layer(0);
@@ -451,12 +470,21 @@ pub const rdpc_msg_t = struct
         const pdutype = s.in_u16_le();
         const pdusource = s.in_u16_le();
         try self.priv.logln(@src(),
-                "rdp totallength 0x{X} sec pdutype 0x{X} pdusource 0x{X}",
+                "rdp totallength {} sec pdutype 0x{X} pdusource 0x{X}",
                 .{totallength, pdutype, pdusource});
+        if (totallength == 0x8000)
+        { // ignore
+            return;
+        }
+        try err_if(totallength < 6, MsgError.BadLength);
+        try s.check_rem(totallength - 6);
+        const ins = try parse.create_from_slice(self.allocator,
+                s.in_u8_slice(totallength - 6));
+        defer ins.delete();
         switch (pdutype & 0xF)
         {
-            c.SCH_PDUTYPE_DEMANDACTIVEPDU => try process_rdp_demand_active(self, s),
-            c.SCH_PDUTYPE_DATAPDU => try process_rdp_data(self, s),
+            c.PDUTYPE_DEMANDACTIVEPDU => try process_rdp_demand_active(self, ins),
+            c.PDUTYPE_DATAPDU => try process_rdp_data(self, ins),
             else => return MsgError.BadCode,
         }
     }
@@ -521,7 +549,7 @@ pub const rdpc_msg_t = struct
         s.push_layer(2, 2);
         // shareControlHeader: insert pdu type; 2 bytes
         // we support protocol version 1
-        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_CONFIRMACTIVEPDU);
+        s.out_u16_le((1 << 4) | c.PDUTYPE_CONFIRMACTIVEPDU);
         // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
         s.out_u16_le(self.mcs_userid);
         // insert share ID; 4 bytes
@@ -587,7 +615,7 @@ pub const rdpc_msg_t = struct
         // back to end
         s.pop_layer(5);
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
-        try rv_to_err(rv);
+        try c_int_to_error(rv);
     }
 
     //*************************************************************************
@@ -601,22 +629,21 @@ pub const rdpc_msg_t = struct
         s.push_layer(7, 0); // iso
         s.push_layer(8, 1); // mcs
         // sec
-        s.push_layer(18, 2); // rdp data
-
+        // shareControlHeader
+        s.push_layer(2, 2);
         // shareControlHeader: insert pdu type; 2 bytes
         // we support protocol version 1
-        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
         // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
         s.out_u16_le(self.mcs_userid);
         // insert share ID; 4 bytes
         s.out_u32_le(self.rdp_share_id);
         s.out_u8(0);                            // pad1
-        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u8(c.STREAM_MED);                 // stream ID
         s.out_u16_le(0);                        // uncompressed length
-        s.out_u8(c.RDP_PDUTYPE2_SYNCHRONIZE);   // pduType2
+        s.out_u8(c.PDUTYPE2_SYNCHRONIZE);       // pduType2
         s.out_u8(0);                            // compressed type
         s.out_u16_le(0);                        // compressed length
-
         // save end
         s.push_layer(0, 5);
         // rdp length
@@ -633,7 +660,7 @@ pub const rdpc_msg_t = struct
         // back to end
         s.pop_layer(5);
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
-        try rv_to_err(rv);
+        try c_int_to_error(rv);
     }
 
     //*************************************************************************
@@ -643,24 +670,26 @@ pub const rdpc_msg_t = struct
         try self.priv.logln(@src(), "", .{});
         const s = try parse.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 2);
-        s.push_layer(7, 0);
-        s.push_layer(8, 1);
+        try s.check_rem(7 + 8 + 2 + 2 + 2 + 4 + 16);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
         s.push_layer(2, 2);
         // shareControlHeader: insert pdu type; 2 bytes
         // we support protocol version 1
-        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
         // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
         s.out_u16_le(self.mcs_userid);
         // insert share ID; 4 bytes
         s.out_u32_le(self.rdp_share_id);
         s.out_u8(0);                            // pad1
-        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u8(c.STREAM_MED);                 // stream ID
         s.out_u16_le(0);                        // uncompressed length
-        s.out_u8(c.RDP_PDUTYPE2_CONTROL);       // pduType2
+        s.out_u8(c.PDUTYPE2_CONTROL);           // pduType2
         s.out_u8(0);                            // compressed type
         s.out_u16_le(0);                        // compressed length
-        s.out_u16_le(c.RDP_CTRLACTION_COOPERATE);   // action
+        s.out_u16_le(c.CTRLACTION_COOPERATE);   // action
         s.out_u16_le(0);                        // grantID
         s.out_u32_le(0);                        // controlID
         // save end
@@ -679,7 +708,7 @@ pub const rdpc_msg_t = struct
         // back to end
         s.pop_layer(5);
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
-        try rv_to_err(rv);
+        try c_int_to_error(rv);
     }
 
     //*************************************************************************
@@ -689,24 +718,26 @@ pub const rdpc_msg_t = struct
         try self.priv.logln(@src(), "", .{});
         const s = try parse.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 2);
-        s.push_layer(7, 0);
-        s.push_layer(8, 1);
+        try s.check_rem(7 + 8 + 2 + 2 + 2 + 4 + 16);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
         s.push_layer(2, 2);
         // shareControlHeader: insert pdu type; 2 bytes
         // we support protocol version 1
-        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
         // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
         s.out_u16_le(self.mcs_userid);
         // insert share ID; 4 bytes
         s.out_u32_le(self.rdp_share_id);
         s.out_u8(0);                            // pad1
-        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u8(c.STREAM_MED);                 // stream ID
         s.out_u16_le(0);                        // uncompressed length
-        s.out_u8(c.RDP_PDUTYPE2_CONTROL);       // pduType2
+        s.out_u8(c.PDUTYPE2_CONTROL);           // pduType2
         s.out_u8(0);                            // compressed type
         s.out_u16_le(0);                        // compressed length
-        s.out_u16_le(c.RDP_CTRLACTION_REQUEST_CONTROL); // action
+        s.out_u16_le(c.CTRLACTION_REQUEST_CONTROL); // action
         s.out_u16_le(0);                        // grantID
         s.out_u32_le(0);                        // controlID
         // save end
@@ -725,7 +756,7 @@ pub const rdpc_msg_t = struct
         // back to end
         s.pop_layer(5);
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
-        try rv_to_err(rv);
+        try c_int_to_error(rv);
     }
 
     //*************************************************************************
@@ -735,21 +766,23 @@ pub const rdpc_msg_t = struct
         try self.priv.logln(@src(), "", .{});
         const s = try parse.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 2);
-        s.push_layer(7, 0);
-        s.push_layer(8, 1);
+        try s.check_rem(7 + 8 + 2 + 2 + 2 + 4 + 31);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
         s.push_layer(2, 2);
         // shareControlHeader: insert pdu type; 2 bytes
         // we support protocol version 1
-        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
         // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
         s.out_u16_le(self.mcs_userid);
         // insert share ID; 4 bytes
         s.out_u32_le(self.rdp_share_id);
         s.out_u8(0);                            // pad1
-        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u8(c.STREAM_MED);                 // stream ID
         s.out_u16_le(0);                        // uncompressed length
-        s.out_u8(c.RDP_PDUTYPE2_BITMAPCACHE_PERSISTENT_LIST);   // pduType2
+        s.out_u8(c.PDUTYPE2_BITMAPCACHE_PERSISTENT_LIST);   // pduType2
         s.out_u8(0);                            // compressed type
         s.out_u16_le(0);                        // compressed length
         s.out_u16_le(0);                        // numEntriesCache0
@@ -780,7 +813,7 @@ pub const rdpc_msg_t = struct
         // back to end
         s.pop_layer(5);
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
-        try rv_to_err(rv);
+        try c_int_to_error(rv);
     }
 
     //*************************************************************************
@@ -790,21 +823,23 @@ pub const rdpc_msg_t = struct
         try self.priv.logln(@src(), "", .{});
         const s = try parse.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 2);
+        try s.check_rem(7 + 8 + 2 + 2 + 2 + 4 + 16);
         s.push_layer(7, 0); // iso
         s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
         s.push_layer(2, 2);
         // shareControlHeader: insert pdu type; 2 bytes
         // we support protocol version 1
-        s.out_u16_le((1 << 4) | c.SCH_PDUTYPE_DATAPDU);
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
         // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
         s.out_u16_le(self.mcs_userid);
         // insert share ID; 4 bytes
         s.out_u32_le(self.rdp_share_id);
         s.out_u8(0);                            // pad1
-        s.out_u8(c.RDP_STREAM_MED);             // stream ID
+        s.out_u8(c.STREAM_MED);                 // stream ID
         s.out_u16_le(0);                        // uncompressed length
-        s.out_u8(c.RDP_PDUTYPE2_FONTLIST);      // pduType2
+        s.out_u8(c.PDUTYPE2_FONTLIST);          // pduType2
         s.out_u8(0);                            // compressed type
         s.out_u16_le(0);                        // compressed length
         s.out_u16_le(0);                        // numberFonts
@@ -827,12 +862,232 @@ pub const rdpc_msg_t = struct
         // back to end
         s.pop_layer(5);
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
-        try rv_to_err(rv);
+        try c_int_to_error(rv);
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_update_orders(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_update_bitmap(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn prcoess_data_update_palette(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_update_synchronize(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_update(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        try s.check_rem(2);
+        const updateType = s.in_u16_le();
+        switch (updateType)
+        {
+            c.UPDATETYPE_ORDERS => try process_data_update_orders(self, s),
+            c.UPDATETYPE_BITMAP => try process_data_update_bitmap(self, s),
+            c.UPDATETYPE_PALETTE => try prcoess_data_update_palette(self, s),
+            c.UPDATETYPE_SYNCHRONIZE => try process_data_update_synchronize(self, s),
+            else => return MsgError.BadCode,
+        }
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_control(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_synchronize(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_fontmap(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
     }
 
     //*************************************************************************
     // in
     fn process_rdp_data(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "s.data.len {}", .{s.data.len});
+        try s.check_rem(12);
+        const shareID = s.in_u32_le();
+        s.in_u8_skip(1);
+        const streamID = s.in_u8();
+        const uncompressedLength = s.in_u16_le();
+        const pduType2 = s.in_u8();
+        const compressedType = s.in_u8();
+        const compressedLength = s.in_u16_le();
+        try self.priv.logln(@src(),
+                "shareID 0x{X} streamID 0x{X} uncompressLength {} " ++
+                "pduType2 0x{X} compressedType 0x{X} compressedLength {}",
+                .{shareID, streamID, uncompressedLength, pduType2,
+                compressedType, compressedLength});
+        switch (pduType2)
+        {
+            c.PDUTYPE2_UPDATE => try process_data_update(self, s),
+            c.PDUTYPE2_CONTROL => try process_data_control(self, s),
+            c.PDUTYPE2_SYNCHRONIZE => try process_data_synchronize(self, s),
+            c.PDUTYPE2_FONTMAP => try process_data_fontmap(self, s),
+            else => return MsgError.BadCode,
+        }
+    }
+
+    //*************************************************************************
+    fn process_fp_orders(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_bitmap(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_palette(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_synchronize(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_surfcmds(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        var bd: c.bitmap_data_t = .{};
+        try s.check_rem(2);
+        const cmdType = s.in_u16_le();
+        try self.priv.logln_devel(@src(), "nbytes {} cmdType {}",
+                .{s.data.len, cmdType});
+        if (cmdType == c.CMDTYPE_STREAM_SURFACE_BITS)
+        {
+            try s.check_rem(8);
+            bd.dest_left = s.in_u16_le();
+            bd.dest_top = s.in_u16_le();
+            bd.dest_right = s.in_u16_le();
+            bd.dest_bottom = s.in_u16_le();
+            try self.priv.logln_devel(@src(),
+                    "destLeft {} destTop {} destRight {} destBottom {}",
+                    .{bd.dest_left, bd.dest_top,
+                    bd.dest_right, bd.dest_bottom});
+            try s.check_rem(12);
+            bd.bits_per_pixel = s.in_u8();
+            bd.flags = s.in_u8();
+            s.in_u8_skip(1); // reserved
+            bd.codec_id = s.in_u8();
+            bd.width = s.in_u16_le();
+            bd.height = s.in_u16_le();
+            bd.bitmap_data_len = s.in_u32_le();
+            bd.bitmap_data = s.data.ptr + s.offset;
+            if ((bd.flags & c.EX_COMPRESSED_BITMAP_HEADER_PRESENT) != 0)
+            {
+                try s.check_rem(24);
+                bd.high_unique_id = s.in_u32_le();
+                bd.low_unique_id = s.in_u32_le();
+                bd.tm_milliseconds = s.in_u64_le();
+                bd.tm_seconds = s.in_u64_le();
+            }
+            try self.priv.logln_devel(@src(),
+                    "bits_per_pixel {} flags {} codecID {} " ++
+                    "width {} height {} bitmap_data_len {}",
+                    .{bd.bits_per_pixel, bd.flags, bd.codec_id,
+                    bd.width, bd.height, bd.bitmap_data_len});
+            if (self.priv.rdpc.set_surface_bits) |aset_surface_bits|
+            {
+                const rv = aset_surface_bits(&self.priv.rdpc, &bd);
+                try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                        MsgError.BadSetSurfaceBits);
+            }
+        }
+    }
+
+    //*************************************************************************
+    fn process_fp_ptr_null(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_ptr_default(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_ptr_position(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_color(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_cached(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    fn process_fp_large_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
         _ = s;
@@ -842,8 +1097,122 @@ pub const rdpc_msg_t = struct
     // in
     fn process_rdp_fastpath_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try self.priv.logln_devel(@src(), "", .{});
+        // outputHeader
+        try s.check_rem(2);
+        const outputHeader = s.in_u8();
+        const flags = outputHeader >> 6;
+        var len: u16 = s.in_u8();
+        if ((len & 0x80) != 0)
+        {
+            try s.check_rem(1);
+            len = ((len & 0x7F) << 8) | s.in_u8();
+        }
+        if (flags != 0)
+        {
+            // encryption, todo
+            return MsgError.BadCode;
+        }
+        try self.priv.logln_devel(@src(), "len {} flags {X}", .{len, flags});
+        // updateHeader
+        try s.check_rem(1);
+        const updateHeader = s.in_u8();
+        const compression = updateHeader >> 6;
+        if (compression != 0)
+        {
+            // compression, todo
+            try s.check_rem(1);
+            s.in_u8_skip(1); // compressionFlags
+            return MsgError.BadCode;
+        }
+        try s.check_rem(2);
+        const size = s.in_u16_le();
+        const updateCode = updateHeader & 0xF;
+        const fragmentation = (updateHeader >> 4) & 0x3;
+        try self.priv.logln_devel(@src(), "updateCode {} fragmentation {} " ++
+                 "compression {} size {}",
+                 .{updateCode, fragmentation,
+                 compression, size});
+        var ls = s;
+        if (fragmentation == c.FASTPATH_FRAGMENT_SINGLE)
+        {
+            // ok process updateCode
+        }
+        else if (fragmentation == c.FASTPATH_FRAGMENT_LAST)
+        {
+            if (self.frag_s) |afrag_s|
+            {
+                const nbytes = s.get_rem();
+                try s.check_rem(nbytes);
+                try afrag_s.check_rem(nbytes);
+                afrag_s.out_u8_slice(s.in_u8_slice(nbytes));
+                ls = try parse.create_from_slice(self.allocator,
+                        afrag_s.get_out_slice());
+                try self.priv.logln_devel(@src(), "len {}", .{ls.data.len});
+            }
+            else
+            {
+                return MsgError.BadCode;
+            }
+            // ok process updateCode
+        }
+        else if (fragmentation == c.FASTPATH_FRAGMENT_FIRST)
+        {
+            if (self.frag_s == null)
+            {
+                const scaps = self.priv.rdpc.scaps;
+                const max = scaps.multifragmentupdate.MaxRequestSize;
+                self.frag_s = try parse.create(self.allocator, max);
+            }
+            if (self.frag_s) |afrag_s|
+            {
+                try afrag_s.reset(0);
+                const nbytes = s.get_rem();
+                try s.check_rem(nbytes);
+                try afrag_s.check_rem(nbytes);
+                afrag_s.out_u8_slice(s.in_u8_slice(nbytes));
+            }
+            else
+            {
+                return MsgError.BadCode;
+            }
+            return;
+        }
+        else // FASTPATH_FRAGMENT_NEXT
+        {
+            if (self.frag_s) |afrag_s|
+            {
+                const nbytes = s.get_rem();
+                try s.check_rem(nbytes);
+                try afrag_s.check_rem(nbytes);
+                afrag_s.out_u8_slice(s.in_u8_slice(nbytes));
+            }
+            else
+            {
+                return MsgError.BadCode;
+            }
+            return;
+        }
+        switch (updateCode)
+        {
+            c.FASTPATH_UPDATETYPE_ORDERS => try process_fp_orders(self, ls),
+            c.FASTPATH_UPDATETYPE_BITMAP => try process_fp_bitmap(self, ls),
+            c.FASTPATH_UPDATETYPE_PALETTE => try process_fp_palette(self, ls),
+            c.FASTPATH_UPDATETYPE_SYNCHRONIZE => try process_fp_synchronize(self, ls),
+            c.FASTPATH_UPDATETYPE_SURFCMDS => try process_fp_surfcmds(self, ls),
+            c.FASTPATH_UPDATETYPE_PTR_NULL => try process_fp_ptr_null(self, ls),
+            c.FASTPATH_UPDATETYPE_PTR_DEFAULT => try process_fp_ptr_default(self, ls),
+            c.FASTPATH_UPDATETYPE_PTR_POSITION => try process_fp_ptr_position(self, ls),
+            c.FASTPATH_UPDATETYPE_COLOR => try process_fp_color(self, ls),
+            c.FASTPATH_UPDATETYPE_CACHED => try process_fp_cached(self, ls),
+            c.FASTPATH_UPDATETYPE_POINTER => try process_fp_pointer(self, ls),
+            c.FASTPATH_UPDATETYPE_LARGE_POINTER => try process_fp_large_pointer(self, ls),
+            else => return MsgError.BadCode,
+        }
+        if (ls != s) // pointer compare
+        {
+            ls.delete();
+        }
     }
 
     //*************************************************************************
@@ -852,6 +1221,62 @@ pub const rdpc_msg_t = struct
     {
         try self.priv.logln(@src(), "", .{});
         _ = s;
+    }
+
+    //*************************************************************************
+    pub fn send_mouse_event(self: *rdpc_msg_t, event: u16,
+            xpos: u16, ypos: u16) !c_int
+    {
+        try self.priv.logln_devel(@src(), "event 0x{X} xpos {} ypos {}",
+                .{event, xpos, ypos});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 18 + 16);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.STREAM_MED);                 // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.PDUTYPE2_INPUT);             // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        // TS_INPUT_PDU_DATA
+        s.out_u16_le(1);                        // numEvents
+        s.out_u8_skip(2);                       // pad2Octets
+        // slowPathInputEvents
+        s.out_u8_skip(4);                       // eventTime
+        s.out_u16_le(0x8001);                   // messageType INPUT_EVENT_MOUSE
+        s.out_u16_le(event);                    // pointerFlags
+        s.out_u16_le(xpos);                     // xPos
+        s.out_u16_le(ypos);                     // yPos
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try c_int_to_error(rv);
+        return rv;
     }
 
 };
@@ -945,10 +1370,7 @@ fn ber_out_integer(s: *parse.parse_t, val: u16) !void
 //*****************************************************************************
 fn iso_out_data_header(s: *parse.parse_t, length: u16) !void
 {
-    if (length < 7)
-    {
-        return MsgError.BadTag;
-    }
+    try err_if(length < 7, MsgError.BadTag);
     s.out_u8(3);            // version
     s.out_u8(0);            // reserved
     s.out_u16_be(length);
@@ -976,7 +1398,7 @@ fn iso_in_data_header(s: *parse.parse_t, length: *u16) !void
 fn mcs_out_header(s: *parse.parse_t, length: u16,
         userid: u16, channel: u16) !void
 {
-    try err_if(length < 1, MsgError.BadTag);
+    try err_if(length < 8, MsgError.BadTag);
     s.out_u8(c.MCS_SDRQ << 2);
     s.out_u16_be(userid);
     s.out_u16_be(channel);
@@ -1038,10 +1460,10 @@ pub fn init_client_info_defaults(msg: *rdpc_msg_t,
     const rdpc = &msg.priv.rdpc;
     var client_info = &rdpc.client_info;
     client_info.CodePage = 0;
-    client_info.flags = c.RDP_INFO_MOUSE |
-            c.RDP_INFO_DISABLECTRLALTDEL |
-            c.RDP_INFO_UNICODE |
-            c.RDP_INFO_MAXIMIZESHELL;
+    client_info.flags = c.INFO_MOUSE |
+            c.INFO_DISABLECTRLALTDEL |
+            c.INFO_UNICODE |
+            c.INFO_MAXIMIZESHELL;
     var u32_array = std.ArrayList(u32).init(msg.allocator.*);
     defer u32_array.deinit();
     try strings.utf8_to_utf16Z_as_u8(&u32_array,
@@ -1059,4 +1481,8 @@ pub fn init_client_info_defaults(msg: *rdpc_msg_t,
     try strings.utf8_to_utf16Z_as_u8(&u32_array,
             std.mem.sliceTo(&settings.workingdir, 0),
             &client_info.WorkingDir, &client_info.cbWorkingDir);
+    if (client_info.cbPassword > 0)
+    {
+        client_info.flags |= c.INFO_AUTOLOGON;
+    }
 }

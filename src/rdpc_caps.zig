@@ -1080,14 +1080,27 @@ pub fn out_cap_bitmapcodecs(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
     if (bitmapcodecs.capabilitySetType != 0)
     {
         try msg.priv.logln(@src(), "present", .{});
-        const struct_bytes = get_struct_bytes(@TypeOf(bitmapcodecs.*));
+        var struct_bytes = get_struct_bytes(@TypeOf(bitmapcodecs.*));
+        // this struct is differnece, the size sent may be smaller
+        // than the size of the struct
+        try msg.priv.logln(@src(), "struct_bytes {}", .{struct_bytes});
+        struct_bytes -= @sizeOf(@TypeOf(bitmapcodecs.supportedBitmapCodecs));
+        struct_bytes -= 2;
+        struct_bytes += bitmapcodecs.lengthSupportedBitmapCodecs;
+        try msg.priv.logln(@src(), "struct_bytes {}", .{struct_bytes});
         try s.check_rem(struct_bytes);
         s.push_layer(4, 5);
         const len = bitmapcodecs.lengthSupportedBitmapCodecs;
         s.out_u8_slice(bitmapcodecs.supportedBitmapCodecs[0..len]);
         s.push_layer(0, 6);
         bitmapcodecs.lengthCapability = s.layer_subtract(6, 5);
-        try err_if(bitmapcodecs.lengthCapability != struct_bytes, MsgError.BadSize);
+        try msg.priv.logln(@src(), "bitmapcodecs.lengthCapability {}",
+                .{bitmapcodecs.lengthCapability});
+        try msg.priv.logln(@src(),
+                "bitmapcodecs.lengthSupportedBitmapCodecs {}",
+                .{bitmapcodecs.lengthSupportedBitmapCodecs});
+        try err_if(bitmapcodecs.lengthCapability != struct_bytes,
+                MsgError.BadSize);
         s.pop_layer(5);
         s.out_u16_le(bitmapcodecs.capabilitySetType);
         s.out_u16_le(bitmapcodecs.lengthCapability);
@@ -1122,6 +1135,60 @@ pub fn out_cap_frameack(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
 }
 
 //*********************************************************************************
+fn add_rfx_bitmapcodec(s: *parse.parse_t) !void
+{
+    try s.check_rem(16 + 1 + 2);
+    const codecGUID = c.CODEC_GUID_REMOTEFX;
+    s.out_u8_slice(codecGUID[0..16]);
+    s.out_u8(c.CODEC_ID_REMOTEFX);
+    const captureFlags: u32 = 0; // 0 or CARDP_CAPS_CAPTURE_NON_CAC
+    const codecMode: u8 = 0; // 0(video) or 2(image)
+    s.out_u16_le(49); // codecPropertiesLength
+    try s.check_rem(49);
+    // TS_RFX_CLNT_CAPS_CONTAINER
+    s.out_u32_le(49); // length
+    s.out_u32_le(captureFlags); // captureFlags
+    s.out_u32_le(37); // capsLength
+    // TS_RFX_CAPS
+    s.out_u16_le(c.CBY_CAPS); // blockType
+    s.out_u32_le(8); // blockLen
+    s.out_u16_le(1); // numCapsets
+    // TS_RFX_CAPSET
+    s.out_u16_le(c.CBY_CAPSET); // blockType
+    s.out_u32_le(29); // blockLen
+    s.out_u8(0x01); // codecId (MUST be set to 0x01)
+    s.out_u16_le(c.CLY_CAPSET); // capsetType
+    s.out_u16_le(2); // numIcaps
+    s.out_u16_le(8); // icapLen
+    // TS_RFX_ICAP (RLGR1)
+    s.out_u16_le(c.CLW_VERSION_1_0); // version
+    s.out_u16_le(c.CT_TILE_64x64); // tileSize
+    s.out_u8(codecMode); // flags
+    s.out_u8(c.CLW_COL_CONV_ICT); // colConvBits
+    s.out_u8(c.CLW_XFORM_DWT_53_A); // transformBits
+    s.out_u8(c.CLW_ENTROPY_RLGR1); // entropyBits
+    // TS_RFX_ICAP (RLGR3)
+    s.out_u16_le(c.CLW_VERSION_1_0); // version
+    s.out_u16_le(c.CT_TILE_64x64); // tileSize
+    s.out_u8(codecMode); // flags
+    s.out_u8(c.CLW_COL_CONV_ICT); // colConvBits
+    s.out_u8(c.CLW_XFORM_DWT_53_A); // transformBits
+    s.out_u8(c.CLW_ENTROPY_RLGR3); // entropyBits
+}
+
+//*********************************************************************************
+fn add_jpg_bitmapcodec(s: *parse.parse_t) !void
+{
+    try s.check_rem(16 + 1 + 2);
+    const codecGUID = c.CODEC_GUID_JPEG;
+    s.out_u8_slice(codecGUID[0..16]);
+    s.out_u8(c.CODEC_ID_JPEG);
+    s.out_u16_le(1); // codecPropertiesLength
+    try s.check_rem(1);
+    s.out_u8(75); // jpeg quality
+}
+
+//*********************************************************************************
 pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
         settings: *c.rdpc_settings_t) !void
 {
@@ -1131,6 +1198,7 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     const rdpc = &msg.priv.rdpc;
     const core = &rdpc.cgcc.core;
 
+    // CAPSTYPE_GENERAL
     ccaps.general.capabilitySetType = c.CAPSTYPE_GENERAL;
     ccaps.general.lengthCapability = 0; // calculated
     ccaps.general.osMajorType = c.OSMAJORTYPE_UNIX;
@@ -1146,6 +1214,7 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     ccaps.general.refreshRectSupport = 1;
     ccaps.general.suppressOutputSupport = 1;
 
+    // CAPSTYPE_BITMAP
     ccaps.bitmap.capabilitySetType = c.CAPSTYPE_BITMAP;
     ccaps.bitmap.lengthCapability = 0; // calculated
     ccaps.bitmap.preferredBitsPerPixel = @intCast(settings.bpp);
@@ -1162,6 +1231,7 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     ccaps.bitmap.multipleRectangleSupport = 1;
     ccaps.bitmap.pad2octetsB = 0;
 
+    // CAPSTYPE_ORDER
     ccaps.order.capabilitySetType = c.CAPSTYPE_ORDER;
     ccaps.order.lengthCapability = 0; // calculated
     @memset(&ccaps.order.terminalDescriptor, 0);
@@ -1183,6 +1253,7 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     ccaps.order.textANSICodePage = 65001;
     ccaps.order.pad2octetsE = 0;
 
+    // CAPSTYPE_BITMAPCACHE
     ccaps.bitmapcache.capabilitySetType = c.CAPSTYPE_BITMAPCACHE;
     ccaps.bitmapcache.lengthCapability = 0; // calculated
     ccaps.bitmapcache.pad1 = 0;
@@ -1200,6 +1271,7 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     ccaps.bitmapcache.Cache2Entries = 1000;
     ccaps.bitmapcache.Cache2MaximumCellSize = bpp * 4096;
 
+    // CAPSTYPE_CONTROL
     ccaps.control.capabilitySetType = c.CAPSTYPE_CONTROL;
     ccaps.control.lengthCapability = 0; // calculated
     ccaps.control.controlFlags = 0;
@@ -1207,17 +1279,20 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     ccaps.control.controlInterest = 2;
     ccaps.control.detachInterest = 2;
 
+    // CAPSTYPE_POINTER
     ccaps.pointer.capabilitySetType = c.CAPSTYPE_POINTER;
     ccaps.pointer.lengthCapability = 0; // calculated
     ccaps.pointer.colorPointerFlag = 1;
     ccaps.pointer.colorPointerCacheSize = 32;
     ccaps.pointer.pointerCacheSize = 32;
 
+    // CAPSTYPE_SHARE
     ccaps.share.capabilitySetType = c.CAPSTYPE_SHARE;
     ccaps.share.lengthCapability = 0; // calculated
     ccaps.share.nodeID = 0;
     ccaps.share.pad2octets = 0;
 
+    // CAPSTYPE_INPUT
     ccaps.input.capabilitySetType = c.CAPSTYPE_INPUT;
     ccaps.input.lengthCapability = 0; // calculated
     ccaps.input.inputFlags = c.INPUT_FLAG_SCANCODES | c.INPUT_FLAG_MOUSEX |
@@ -1234,23 +1309,65 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     ccaps.brush.lengthCapability = 0; // calculated
     ccaps.brush.brushSupportLevel = c.BRUSH_DEFAULT;
 
+    // CAPSTYPE_GLYPHCACHE
     ccaps.glyphcache.capabilitySetType = c.CAPSTYPE_GLYPHCACHE;
     ccaps.glyphcache.lengthCapability = 0; // calculated
 
+    // CAPSTYPE_OFFSCREENCACHE
     ccaps.offscreen.capabilitySetType = c.CAPSTYPE_OFFSCREENCACHE;
     ccaps.offscreen.lengthCapability = 0; // calculated
     ccaps.offscreen.offscreenSupportLevel = 0;
     ccaps.offscreen.offscreenCacheSize = 0;
     ccaps.offscreen.offscreenCacheEntries = 0;
 
+    // CAPSTYPE_VIRTUALCHANNEL
     ccaps.virtualchannel.capabilitySetType = c.CAPSTYPE_VIRTUALCHANNEL;
     ccaps.virtualchannel.lengthCapability = 0; // calculated
     ccaps.virtualchannel.flags = c.VCCAPS_NO_COMPR;
     ccaps.virtualchannel.VCChunkSize = 0;
 
+    // CAPSTYPE_SOUND
     ccaps.sound.capabilitySetType = c.CAPSTYPE_SOUND;
     ccaps.sound.lengthCapability = 0; // calculated
     ccaps.sound.soundFlags = c.SOUND_FLAG_BEEPS;
     ccaps.sound.pad2octetsA = 0;
 
+    // CAPSETTYPE_MULTIFRAGMENTUPDATE
+    ccaps.multifragmentupdate.capabilitySetType = c.CAPSETTYPE_MULTIFRAGMENTUPDATE;
+    ccaps.multifragmentupdate.lengthCapability = 0; // calculated
+    ccaps.multifragmentupdate.MaxRequestSize = 2146304;
+
+    // CAPSETTYPE_SURFACE_COMMANDS
+    ccaps.surfcmds.capabilitySetType = c.CAPSETTYPE_SURFACE_COMMANDS;
+    ccaps.surfcmds.lengthCapability = 0; // calculated
+    ccaps.surfcmds.cmdFlags = 0;
+    ccaps.surfcmds.reserved = 0;
+
+    // CAPSETTYPE_BITMAP_CODECS
+    if ((settings.rfx != 0) or (settings.jpg != 0))
+    {
+        const bc = &ccaps.bitmapcodecs;
+        bc.capabilitySetType = c.CAPSETTYPE_BITMAP_CODECS;
+        bc.lengthCapability = 0; // calculated
+        const s = try parse.create_from_slice(msg.allocator,
+                &bc.supportedBitmapCodecs);
+        defer s.delete();
+        try s.check_rem(1);
+        s.push_layer(1, 0);
+        var bitmapCodecCount: u8 = 0;
+        if (settings.rfx != 0)
+        {
+            try add_rfx_bitmapcodec(s);
+            bitmapCodecCount += 1;
+        }
+        if (settings.jpg != 0)
+        {
+            try add_jpg_bitmapcodec(s);
+            bitmapCodecCount += 1;
+        }
+        s.push_layer(0, 6);
+        bc.lengthSupportedBitmapCodecs = s.layer_subtract(6, 0);
+        s.pop_layer(0);
+        s.out_u8(bitmapCodecCount);
+    }
 }

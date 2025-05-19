@@ -48,16 +48,20 @@ pub fn init_gcc_defaults(msg: *rdpc_msg.rdpc_msg_t,
                                             // 8.1 clients
     core.desktopWidth = @intCast(settings.width);
     core.desktopHeight = @intCast(settings.height);
+    try msg.priv.logln_devel(@src(), "desktopWidth {} desktopHeight {}",
+            .{core.desktopWidth, core.desktopHeight});
     core.desktopPhysicalWidth =
             pixels_to_mm(core.desktopWidth, settings.dpix);
     core.desktopPhysicalHeight =
             pixels_to_mm(core.desktopHeight, settings.dpiy);
-    core.colorDepth = @intCast(settings.bpp);
     core.colorDepth = c.RNS_UD_COLOR_8BPP;  // 0xCA01 8 bits/pixel
     // secure access sequence
     core.SASSequence = c.RNS_UD_SAS_DEL;    // 0xAA03
     core.keyboardLayout = @intCast(settings.keyboard_layout);
     core.clientBuild = 2600;
+    core.postBeta2ColorDepth = c.RNS_UD_COLOR_8BPP;
+    core.highColorDepth = @intCast(settings.bpp);
+    core.connectionType = c.CONNECTION_TYPE_LAN;
 
     var u32_array = std.ArrayList(u32).init(msg.allocator.*);
     defer u32_array.deinit();

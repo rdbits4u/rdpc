@@ -1255,7 +1255,7 @@ pub const rdpc_msg_t = struct
         s.out_u8_skip(2);                       // pad2Octets
         // slowPathInputEvents
         s.out_u8_skip(4);                       // eventTime
-        s.out_u16_le(0x8001);                   // messageType INPUT_EVENT_MOUSE
+        s.out_u16_le(c.INPUT_EVENT_MOUSE);      // messageType
         s.out_u16_le(event);                    // pointerFlags
         s.out_u16_le(xpos);                     // xPos
         s.out_u16_le(ypos);                     // yPos

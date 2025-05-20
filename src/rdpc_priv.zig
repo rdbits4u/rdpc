@@ -157,6 +157,7 @@ pub const rdpc_priv_t = extern struct
     {
         try self.logln_devel(@src(), "event 0x{X} xpos {} ypos {}",
                 .{event, xpos, ypos});
+        // make sure we are connected
         if (rdpc_priv_t.state6_fn == self.sub.state_fn)
         {
             try self.logln_devel(@src(), "connected", .{});

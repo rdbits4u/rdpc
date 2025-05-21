@@ -1279,6 +1279,119 @@ pub const rdpc_msg_t = struct
         return rv;
     }
 
+    //*************************************************************************
+    pub fn send_mouse_event_ex(self: *rdpc_msg_t, event: u16,
+            xpos: u16, ypos: u16) !c_int
+    {
+        try self.priv.logln_devel(@src(), "event 0x{X} xpos {} ypos {}",
+                .{event, xpos, ypos});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 18 + 16);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.STREAM_MED);                 // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.PDUTYPE2_INPUT);             // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        // TS_INPUT_PDU_DATA
+        s.out_u16_le(1);                        // numEvents
+        s.out_u8_skip(2);                       // pad2Octets
+        // slowPathInputEvents
+        s.out_u8_skip(4);                       // eventTime
+        s.out_u16_le(c.INPUT_EVENT_MOUSEX);     // messageType
+        s.out_u16_le(event);                    // pointerFlags
+        s.out_u16_le(xpos);                     // xPos
+        s.out_u16_le(ypos);                     // yPos
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try c_int_to_error(rv);
+        return rv;
+    }
+
+    //*************************************************************************
+    pub fn send_keyboard_scancode(self: *rdpc_msg_t, keyboard_flags: u16,
+            key_code: u16) !c_int
+    {
+        try self.priv.logln(@src(),
+                "keyboard_flags 0x{X} key_code {}",
+                .{keyboard_flags, key_code});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 18 + 16);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.STREAM_MED);                 // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.PDUTYPE2_INPUT);             // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        // TS_INPUT_PDU_DATA
+        s.out_u16_le(1);                        // numEvents
+        s.out_u8_skip(2);                       // pad2Octets
+        // slowPathInputEvents
+        s.out_u8_skip(4);                       // eventTime
+        s.out_u16_le(c.INPUT_EVENT_SCANCODE);   // messageType
+        s.out_u16_le(keyboard_flags);           // keyboardFlags
+        s.out_u16_le(key_code);                 // keyCode
+        s.out_u8_skip(2);                       // pad2Octets
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try c_int_to_error(rv);
+        return rv;
+    }
+
 };
 
 //*****************************************************************************

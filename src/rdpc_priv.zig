@@ -171,6 +171,47 @@ pub const rdpc_priv_t = extern struct
     }
 
     //*************************************************************************
+    pub fn send_mouse_event_ex(self: *rdpc_priv_t, event: u16,
+            xpos: u16, ypos: u16) !c_int
+    {
+        try self.logln_devel(@src(), "event 0x{X} xpos {} ypos {}",
+                .{event, xpos, ypos});
+        // make sure we are connected
+        if (rdpc_priv_t.state6_fn == self.sub.state_fn)
+        {
+            try self.logln_devel(@src(), "connected", .{});
+            return self.msg.send_mouse_event_ex(event, xpos, ypos);
+        }
+        else
+        {
+            try self.logln(@src(), "not fully connected", .{});
+        }
+        return c.LIBRDPC_ERROR_NONE;
+    }
+
+    //*************************************************************************
+    pub fn send_keyboard_scancode(self: *rdpc_priv_t, keyboard_flags: u16,
+            key_code: u16) !c_int
+    {
+        try self.logln_devel(@src(),
+                "keyboard_flags 0x{X} key_code {}",
+                .{keyboard_flags, key_code});
+        // make sure we are connected
+        if (rdpc_priv_t.state6_fn == self.sub.state_fn)
+        {
+            try self.logln_devel(@src(), "connected", .{});
+            return self.msg.send_keyboard_scancode(keyboard_flags,
+                    key_code);
+        }
+        else
+        {
+            try self.logln(@src(), "not fully connected", .{});
+        }
+        return c.LIBRDPC_ERROR_NONE;
+    }
+
+
+    //*************************************************************************
     fn state_defalt_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         _ = slice;

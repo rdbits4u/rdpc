@@ -83,4 +83,9 @@ int rdpc_process_server_data(struct rdpc_t* rdpc, void* data,
                              int bytes_in_buf, int* bytes_processed);
 int rdpc_send_mouse_event(struct rdpc_t* rdpc, uint16_t event,
                           uint16_t xpos, uint16_t ypos);
+int rdpc_send_mouse_event_ex(struct rdpc_t* rdpc, uint16_t event,
+                             uint16_t xpos, uint16_t ypos);
+int rdpc_send_keyboard_scancode(struct rdpc_t*, uint16_t keyboard_flags,
+                                uint16_t key_code);
+
 #endif

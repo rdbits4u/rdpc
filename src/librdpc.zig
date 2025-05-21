@@ -103,7 +103,7 @@ export fn rdpc_process_server_data(rdpc: ?*c.rdpc_t,
 
 //*****************************************************************************
 // int rdpc_send_mouse_event(struct rdpc_t* rdpc, uint16_t event,
-//                          uint16_t xpos, uint16_t ypos);
+//                           uint16_t xpos, uint16_t ypos);
 export fn rdpc_send_mouse_event(rdpc: ?*c.rdpc_t, event: u16,
         xpos: u16, ypos: u16) c_int
 {
@@ -120,6 +120,58 @@ export fn rdpc_send_mouse_event(rdpc: ?*c.rdpc_t, event: u16,
         else |err|
         {
             priv.logln(@src(), "send_mouse_event err {}",
+                    .{err}) catch return c.LIBRDPC_ERROR_MEMORY;
+            return rdpc_priv.error_to_c_int(err);
+        }
+    }
+    return c.LIBRDPC_ERROR_PARSE;
+}
+
+//*****************************************************************************
+// int rdpc_send_mouse_event_ex(struct rdpc_t* rdpc, uint16_t event,
+//                              uint16_t xpos, uint16_t ypos);
+export fn rdpc_send_mouse_event_ex(rdpc: ?*c.rdpc_t, event: u16,
+        xpos: u16, ypos: u16) c_int
+{
+    // check if rdpc is nil
+    if (rdpc) |ardpc|
+    {
+        // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+        const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+        const rv = priv.send_mouse_event_ex(event, xpos, ypos);
+        if (rv) |arv|
+        {
+            return arv;
+        }
+        else |err|
+        {
+            priv.logln(@src(), "send_mouse_event err {}",
+                    .{err}) catch return c.LIBRDPC_ERROR_MEMORY;
+            return rdpc_priv.error_to_c_int(err);
+        }
+    }
+    return c.LIBRDPC_ERROR_PARSE;
+}
+
+//*****************************************************************************
+// int rdpc_send_keyboard_scancode(struct rdpc_t*, uint16_t keyboard_flags,
+//                                 uint16_t key_code);
+export fn rdpc_send_keyboard_scancode(rdpc: ?*c.rdpc_t, keyboard_flags: u16,
+            key_code: u16) c_int
+{
+    // check if rdpc is nil
+    if (rdpc) |ardpc|
+    {
+        // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+        const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+        const rv = priv.send_keyboard_scancode(keyboard_flags, key_code);
+        if (rv) |arv|
+        {
+            return arv;
+        }
+        else |err|
+        {
+            priv.logln(@src(), "send_keyboard_scancode err {}",
                     .{err}) catch return c.LIBRDPC_ERROR_MEMORY;
             return rdpc_priv.error_to_c_int(err);
         }

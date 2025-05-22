@@ -22,6 +22,8 @@ pub const MsgError = error
     BadParse,
     BadMemory,
     BadSetSurfaceBits,
+    BadPointerUpdate,
+    BadPointerCached,
 };
 
 //*****************************************************************************
@@ -1046,7 +1048,6 @@ pub const rdpc_msg_t = struct
             bd.width = s.in_u16_le();
             bd.height = s.in_u16_le();
             bd.bitmap_data_len = s.in_u32_le();
-            bd.bitmap_data = s.data.ptr + s.offset;
             if ((bd.flags & c.EX_COMPRESSED_BITMAP_HEADER_PRESENT) != 0)
             {
                 try s.check_rem(24);
@@ -1055,6 +1056,9 @@ pub const rdpc_msg_t = struct
                 bd.tm_milliseconds = s.in_u64_le();
                 bd.tm_seconds = s.in_u64_le();
             }
+            try s.check_rem(bd.bitmap_data_len);
+            const bitmap_data = s.in_u8_slice(bd.bitmap_data_len);
+            bd.bitmap_data = bitmap_data.ptr;
             try self.priv.logln_devel(@src(),
                     "bits_per_pixel {} flags {} codecID {} " ++
                     "width {} height {} bitmap_data_len {}",
@@ -1091,31 +1095,111 @@ pub const rdpc_msg_t = struct
     }
 
     //*************************************************************************
+    fn read_pointer(self: *rdpc_msg_t, s: *parse.parse_t,
+            cp: *c.pointer_t, is_large: bool) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        try s.check_rem(14);
+        cp.cache_index = s.in_u16_le();
+        cp.hotx = s.in_u16_le();
+        cp.hoty = s.in_u16_le();
+        cp.width = s.in_u16_le();
+        cp.height = s.in_u16_le();
+        if (is_large)
+        {
+            cp.length_and_mask = s.in_u32_le();
+            cp.length_xor_mask = s.in_u32_le();
+        }
+        else
+        {
+            cp.length_and_mask = s.in_u16_le();
+            cp.length_xor_mask = s.in_u16_le();
+        }
+        try self.priv.logln(@src(),
+                "cache_index {} hotx {} hoty {} width {} height {} " ++
+                "length_and_mask {} length_xor_mask {}",
+                .{cp.cache_index, cp.hotx, cp.hoty, cp.width, cp.height,
+                cp.length_and_mask, cp.length_xor_mask});
+    }
+
+    //*************************************************************************
     fn process_fp_color(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        _ = s;
+        var cp: c.pointer_t = .{};
+        try self.read_pointer(s, &cp, false);
+        try s.check_rem(cp.length_xor_mask);
+        const xor_mask_data = s.in_u8_slice(cp.length_xor_mask);
+        try s.check_rem(cp.length_and_mask);
+        const and_mask_data = s.in_u8_slice(cp.length_and_mask);
+        cp.xor_mask_data = xor_mask_data.ptr;
+        cp.and_mask_data = and_mask_data.ptr;
+        if (self.priv.rdpc.pointer_update) |apointer_update|
+        {
+            const rv = apointer_update(&self.priv.rdpc, &cp);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerUpdate);
+        }
     }
 
     //*************************************************************************
     fn process_fp_cached(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try s.check_rem(2);
+        const cache_index = s.in_u16_le();
+        if (self.priv.rdpc.pointer_cached) |apointer_cached|
+        {
+            const rv = apointer_cached(&self.priv.rdpc, cache_index);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerCached);
+        }
     }
 
     //*************************************************************************
     fn process_fp_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try s.check_rem(2);
+        const xorgBpp = s.in_u16_le();
+        var cp: c.pointer_t = .{};
+        cp.xor_bpp = xorgBpp;
+        try self.read_pointer(s, &cp, false);
+        try s.check_rem(cp.length_xor_mask);
+        const xor_mask_data = s.in_u8_slice(cp.length_xor_mask);
+        try s.check_rem(cp.length_and_mask);
+        const and_mask_data = s.in_u8_slice(cp.length_and_mask);
+        cp.xor_mask_data = xor_mask_data.ptr;
+        cp.and_mask_data = and_mask_data.ptr;
+        if (self.priv.rdpc.pointer_update) |apointer_update|
+        {
+            const rv = apointer_update(&self.priv.rdpc, &cp);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerUpdate);
+        }
     }
 
     //*************************************************************************
     fn process_fp_large_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try s.check_rem(2);
+        const xorgBpp = s.in_u16_le();
+        var cp: c.pointer_t = .{};
+        cp.xor_bpp = xorgBpp;
+        try self.read_pointer(s, &cp, true);
+        try s.check_rem(cp.length_xor_mask);
+        const xor_mask_data = s.in_u8_slice(cp.length_xor_mask);
+        try s.check_rem(cp.length_and_mask);
+        const and_mask_data = s.in_u8_slice(cp.length_and_mask);
+        cp.xor_mask_data = xor_mask_data.ptr;
+        cp.and_mask_data = and_mask_data.ptr;
+        if (self.priv.rdpc.pointer_update) |apointer_update|
+        {
+            const rv = apointer_update(&self.priv.rdpc, &cp);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerUpdate);
+        }
     }
 
     //*************************************************************************

@@ -37,6 +37,7 @@ struct rdpc_settings_t
     int jpg;
 };
 
+// set_surface_bits
 struct bitmap_data_t
 {
     uint8_t bits_per_pixel;
@@ -58,6 +59,22 @@ struct bitmap_data_t
     void* bitmap_data;
 };
 
+// used with color, new and large cursors
+struct pointer_t
+{
+    uint16_t xor_bpp;
+    uint16_t cache_index;
+    uint16_t hotx;
+    uint16_t hoty;
+    uint16_t width;
+    uint16_t height;
+    uint32_t length_and_mask;
+    uint32_t length_xor_mask;
+    uint32_t pad1;
+    void* xor_mask_data;
+    void* and_mask_data;
+};
+
 struct rdpc_t
 {
     // function calls this library makes, assigned by application
@@ -65,6 +82,10 @@ struct rdpc_t
     int (*send_to_server)(struct rdpc_t* rdpc, void* data, int bytes);
     int (*set_surface_bits)(struct rdpc_t* rdpc,
                             struct bitmap_data_t* bitmap_data);
+    int (*pointer_update)(struct rdpc_t* rdpc,
+                          struct pointer_t* pointer);
+    int (*pointer_cached)(struct rdpc_t* rdpc,
+                          uint16_t cache_index);
     void* user[16];
     struct client_gcc cgcc;
     struct server_gcc sgcc;

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const parse = @import("parse");
 const strings = @import("strings");
 const rdpc_priv = @import("rdpc_priv.zig");
@@ -59,6 +60,30 @@ pub fn error_to_c_int(err: anyerror) c_int
 pub fn get_struct_bytes(comptime T: type) u16
 {
     var rv: u16 = 0;
+
+    if ((builtin.zig_version.major == 0) and (builtin.zig_version.minor == 13))
+    {
+        switch (@typeInfo(T))
+        {
+            //.@"struct" => |struct_info|
+            .Struct => |struct_info|
+            {
+                inline for (struct_info.fields) |field|
+                {
+                    rv += switch (@typeInfo(field.type))
+                    {
+                        //.@"struct" => get_struct_bytes(field.type),
+                        .Struct => get_struct_bytes(field.type),
+                        .Int => @sizeOf(field.type),
+                        .Array => @sizeOf(field.type),
+                        else => @compileError("bad field type " ++ field.name),
+                    };
+                }
+            },
+            else => @compileError("can not get_struct_bytes " ++ @typeName(T)),
+        }
+        return rv;
+    }
     switch (@typeInfo(T))
     {
         .@"struct" => |struct_info|

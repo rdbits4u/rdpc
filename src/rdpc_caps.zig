@@ -567,14 +567,23 @@ pub fn out_cap_windowactivation(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u
     return 0;
 }
 
+// CAPSTYPE_POINTER
 //*********************************************************************************
 pub fn out_cap_pointer(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !u16
 {
+    const scaps = &msg.priv.rdpc.scaps;
     const ccaps = &msg.priv.rdpc.ccaps;
     const pointer = &ccaps.pointer;
-    if (pointer.capabilitySetType != 0)
+    if ((pointer.capabilitySetType != 0) and
+        (scaps.pointer.capabilitySetType != 0))
     {
-        try msg.priv.logln(@src(), "present", .{});
+        // return what server sent
+        pointer.colorPointerFlag = scaps.pointer.colorPointerFlag;
+        pointer.colorPointerCacheSize = scaps.pointer.colorPointerCacheSize;
+        pointer.pointerCacheSize = scaps.pointer.pointerCacheSize;
+        try msg.priv.logln(@src(),
+                "present colorPointerCacheSize {} pointerCacheSize {}",
+                .{pointer.colorPointerCacheSize, pointer.pointerCacheSize});
         const struct_bytes = get_struct_bytes(@TypeOf(pointer.*));
         try s.check_rem(struct_bytes);
         s.push_layer(4, 5);

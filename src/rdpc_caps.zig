@@ -342,7 +342,7 @@ fn process_cap_frame_ack(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
 //*****************************************************************************
 pub fn process_cap(msg: *rdpc_msg.rdpc_msg_t, cap_type: u16, s: *parse.parse_t) !void
 {
-    try msg.priv.logln(@src(), "", .{});
+    try msg.priv.logln_devel(@src(), "", .{});
     switch (cap_type)
     {
         c.CAPSTYPE_GENERAL => try process_cap_general(msg, s),
@@ -1291,9 +1291,10 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
     // CAPSTYPE_POINTER
     ccaps.pointer.capabilitySetType = c.CAPSTYPE_POINTER;
     ccaps.pointer.lengthCapability = 0; // calculated
-    ccaps.pointer.colorPointerFlag = 1;
-    ccaps.pointer.colorPointerCacheSize = 32;
-    ccaps.pointer.pointerCacheSize = 32;
+    // these get overwritten with what server sends
+    ccaps.pointer.colorPointerFlag = 0;
+    ccaps.pointer.colorPointerCacheSize = 0;
+    ccaps.pointer.pointerCacheSize = 0;
 
     // CAPSTYPE_SHARE
     ccaps.share.capabilitySetType = c.CAPSTYPE_SHARE;
@@ -1378,5 +1379,13 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
         bc.lengthSupportedBitmapCodecs = s.layer_subtract(6, 0);
         s.pop_layer(0);
         s.out_u8(bitmapCodecCount);
+    }
+
+    if (settings.use_frame_ack != 0)
+    {
+        // CAPSSETTYPE_FRAME_ACKNOWLEDGE
+        ccaps.frame_acknowledge.capabilitySetType = c.CAPSSETTYPE_FRAME_ACKNOWLEDGE;
+        ccaps.frame_acknowledge.lengthCapability = 0; // calculated
+        ccaps.frame_acknowledge.maxUnacknowledgedFrameCount = settings.frames_in_flight;
     }
 }

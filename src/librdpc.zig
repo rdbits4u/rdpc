@@ -178,3 +178,51 @@ export fn rdpc_send_keyboard_scancode(rdpc: ?*c.rdpc_t, keyboard_flags: u16,
     }
     return c.LIBRDPC_ERROR_PARSE;
 }
+
+//*****************************************************************************
+// int rdpc_send_keyboard_sync(struct rdpc_t*, uint32_t toggle_flags);
+export fn rdpc_send_keyboard_sync(rdpc: ?*c.rdpc_t, toggle_flags: u32) c_int
+{
+    // check if rdpc is nil
+    if (rdpc) |ardpc|
+    {
+        // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+        const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+        const rv = priv.send_keyboard_sync(toggle_flags);
+        if (rv) |arv|
+        {
+            return arv;
+        }
+        else |err|
+        {
+            priv.logln(@src(), "send_keyboard_sync err {}",
+                    .{err}) catch return c.LIBRDPC_ERROR_MEMORY;
+            return rdpc_priv.error_to_c_int(err);
+        }
+    }
+    return c.LIBRDPC_ERROR_PARSE;
+}
+
+//*****************************************************************************
+// int rdpc_send_frame_ack(struct rdpc_t* rdpc, uint32_t frame_id);
+export fn rdpc_send_frame_ack(rdpc: ?*c.rdpc_t, frame_id: u32) c_int
+{
+    // check if rdpc is nil
+    if (rdpc) |ardpc|
+    {
+        // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+        const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+        const rv = priv.send_frame_ack(frame_id);
+        if (rv) |arv|
+        {
+            return arv;
+        }
+        else |err|
+        {
+            priv.logln(@src(), "send_frame_ack err {}",
+                    .{err}) catch return c.LIBRDPC_ERROR_MEMORY;
+            return rdpc_priv.error_to_c_int(err);
+        }
+    }
+    return c.LIBRDPC_ERROR_PARSE;
+}

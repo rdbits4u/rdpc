@@ -163,11 +163,8 @@ pub const rdpc_priv_t = extern struct
             try self.logln_devel(@src(), "connected", .{});
             return self.msg.send_mouse_event(event, xpos, ypos);
         }
-        else
-        {
-            try self.logln(@src(), "not fully connected", .{});
-        }
-        return c.LIBRDPC_ERROR_NONE;
+        try self.logln(@src(), "not fully connected", .{});
+        return c.LIBRDPC_ERROR_NOT_CONNECTED;
     }
 
     //*************************************************************************
@@ -182,11 +179,8 @@ pub const rdpc_priv_t = extern struct
             try self.logln_devel(@src(), "connected", .{});
             return self.msg.send_mouse_event_ex(event, xpos, ypos);
         }
-        else
-        {
-            try self.logln(@src(), "not fully connected", .{});
-        }
-        return c.LIBRDPC_ERROR_NONE;
+        try self.logln(@src(), "not fully connected", .{});
+        return c.LIBRDPC_ERROR_NOT_CONNECTED;
     }
 
     //*************************************************************************
@@ -203,13 +197,37 @@ pub const rdpc_priv_t = extern struct
             return self.msg.send_keyboard_scancode(keyboard_flags,
                     key_code);
         }
-        else
-        {
-            try self.logln(@src(), "not fully connected", .{});
-        }
-        return c.LIBRDPC_ERROR_NONE;
+        try self.logln(@src(), "not fully connected", .{});
+        return c.LIBRDPC_ERROR_NOT_CONNECTED;
     }
 
+    //*************************************************************************
+    pub fn send_keyboard_sync(self: *rdpc_priv_t, toggle_flags: u32) !c_int
+    {
+        try self.logln_devel(@src(), "toggle_flags 0x{X}", .{toggle_flags});
+        // make sure we are connected
+        if (rdpc_priv_t.state6_fn == self.sub.state_fn)
+        {
+            try self.logln_devel(@src(), "connected", .{});
+            return self.msg.send_keyboard_sync(toggle_flags);
+        }
+        try self.logln(@src(), "not fully connected", .{});
+        return c.LIBRDPC_ERROR_NOT_CONNECTED;
+    }
+
+    //*************************************************************************
+    pub fn send_frame_ack(self: *rdpc_priv_t, frame_id: u32) !c_int
+    {
+        try self.logln_devel(@src(), "frame_id 0x{X}", .{frame_id});
+        // make sure we are connected
+        if (rdpc_priv_t.state6_fn == self.sub.state_fn)
+        {
+            try self.logln_devel(@src(), "connected", .{});
+            return self.msg.send_frame_ack(frame_id);
+        }
+        try self.logln(@src(), "not fully connected", .{});
+        return c.LIBRDPC_ERROR_NOT_CONNECTED;
+    }
 
     //*************************************************************************
     fn state_defalt_fn(self: *rdpc_priv_t, slice: []u8) !c_int

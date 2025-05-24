@@ -13,6 +13,7 @@
 #define LIBRDPC_ERROR_MEMORY                -1
 #define LIBRDPC_ERROR_PARSE                 -2
 #define LIBRDPC_ERROR_SURFACE               -3
+#define LIBRDPC_ERROR_NOT_CONNECTED         -4
 #define LIBRDPC_ERROR_OTHER                 -16
 
 struct rdpc_settings_t
@@ -35,6 +36,8 @@ struct rdpc_settings_t
     int rdpdr;
     int rfx;
     int jpg;
+    int use_frame_ack;
+    unsigned int frames_in_flight;
 };
 
 // set_surface_bits
@@ -82,6 +85,8 @@ struct rdpc_t
     int (*send_to_server)(struct rdpc_t* rdpc, void* data, int bytes);
     int (*set_surface_bits)(struct rdpc_t* rdpc,
                             struct bitmap_data_t* bitmap_data);
+    int (*frame_marker)(struct rdpc_t* rdpc, uint16_t frame_action,
+                        uint32_t frame_id);
     int (*pointer_update)(struct rdpc_t* rdpc,
                           struct pointer_t* pointer);
     int (*pointer_cached)(struct rdpc_t* rdpc,
@@ -106,7 +111,9 @@ int rdpc_send_mouse_event(struct rdpc_t* rdpc, uint16_t event,
                           uint16_t xpos, uint16_t ypos);
 int rdpc_send_mouse_event_ex(struct rdpc_t* rdpc, uint16_t event,
                              uint16_t xpos, uint16_t ypos);
-int rdpc_send_keyboard_scancode(struct rdpc_t*, uint16_t keyboard_flags,
+int rdpc_send_keyboard_scancode(struct rdpc_t* rdpc, uint16_t keyboard_flags,
                                 uint16_t key_code);
+int rdpc_send_keyboard_sync(struct rdpc_t* rdpc, uint32_t toggle_flags);
+int rdpc_send_frame_ack(struct rdpc_t* rdpc, uint32_t frame_id);
 
 #endif

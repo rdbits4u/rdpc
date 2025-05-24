@@ -24,6 +24,7 @@ pub const MsgError = error
     BadSetSurfaceBits,
     BadPointerUpdate,
     BadPointerCached,
+    BadFrameMarker,
 };
 
 //*****************************************************************************
@@ -491,12 +492,12 @@ pub const rdpc_msg_t = struct
     // in
     fn process_rdp_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(6);
         const totallength = s.in_u16_le();
         const pdutype = s.in_u16_le();
         const pdusource = s.in_u16_le();
-        try self.priv.logln(@src(),
+        try self.priv.logln_devel(@src(),
                 "rdp totallength {} sec pdutype 0x{X} pdusource 0x{X}",
                 .{totallength, pdutype, pdusource});
         if (totallength == 0x8000)
@@ -520,7 +521,7 @@ pub const rdpc_msg_t = struct
     // in
     fn process_rdp_demand_active(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(8);
         self.rdp_share_id = s.in_u32_le();
         const tag_len = s.in_u16_le();
@@ -531,7 +532,7 @@ pub const rdpc_msg_t = struct
         std.mem.copyForwards(u8, &tag_text, s.in_u8_slice(tag_len));
         try err_if(!std.mem.eql(u8, &tag_text, "RDP\x00"), MsgError.BadTag);
         const caps_count = s.in_u32_le();
-        try self.priv.logln(@src(), "caps_count {} caps_len {}",
+        try self.priv.logln_devel(@src(), "caps_count {} caps_len {}",
                 .{caps_count, caps_len});
         try s.check_rem(caps_len);
         var cap_type: u16 = undefined;
@@ -542,7 +543,7 @@ pub const rdpc_msg_t = struct
             s.push_layer(0, 0);
             cap_type = s.in_u16_le();
             cap_len = s.in_u16_le();
-            try self.priv.logln(@src(),
+            try self.priv.logln_devel(@src(),
                     "index {} cap_type {} cap_len {}",
                     .{index, cap_type, cap_len});
             try s.check_rem(cap_len - 4);
@@ -552,7 +553,7 @@ pub const rdpc_msg_t = struct
             defer ins.delete();
             try rdpc_caps.process_cap(self, cap_type, ins);
         }
-        try self.priv.logln(@src(),"s.offset {} s.data.len {}",
+        try self.priv.logln_devel(@src(),"s.offset {} s.data.len {}",
                 .{s.offset, s.data.len});
 
         try send_confirm_active(self);
@@ -969,7 +970,7 @@ pub const rdpc_msg_t = struct
     // in
     fn process_rdp_data(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "s.data.len {}", .{s.data.len});
+        try self.priv.logln_devel(@src(), "s.data.len {}", .{s.data.len});
         try s.check_rem(12);
         const shareID = s.in_u32_le();
         s.in_u8_skip(1);
@@ -978,7 +979,7 @@ pub const rdpc_msg_t = struct
         const pduType2 = s.in_u8();
         const compressedType = s.in_u8();
         const compressedLength = s.in_u16_le();
-        try self.priv.logln(@src(),
+        try self.priv.logln_devel(@src(),
                 "shareID 0x{X} streamID 0x{X} uncompressLength {} " ++
                 "pduType2 0x{X} compressedType 0x{X} compressedLength {}",
                 .{shareID, streamID, uncompressedLength, pduType2,
@@ -1029,7 +1030,20 @@ pub const rdpc_msg_t = struct
         const cmdType = s.in_u16_le();
         try self.priv.logln_devel(@src(), "nbytes {} cmdType {}",
                 .{s.data.len, cmdType});
-        if (cmdType == c.CMDTYPE_STREAM_SURFACE_BITS)
+        if (cmdType == c.CMDTYPE_FRAME_MARKER)
+        {
+            try s.check_rem(6);
+            const frame_action = s.in_u16_le();
+            const frame_id = s.in_u32_le();
+            if (self.priv.rdpc.frame_marker) |aframe_marker|
+            {
+                const rv = aframe_marker(&self.priv.rdpc, frame_action,
+                        frame_id);
+                try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                        MsgError.BadFrameMarker);
+            }
+        }
+        else if (cmdType == c.CMDTYPE_STREAM_SURFACE_BITS)
         {
             try s.check_rem(8);
             bd.dest_left = s.in_u16_le();
@@ -1098,7 +1112,7 @@ pub const rdpc_msg_t = struct
     fn read_pointer(self: *rdpc_msg_t, s: *parse.parse_t,
             cp: *c.pointer_t, is_large: bool) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(14);
         cp.cache_index = s.in_u16_le();
         cp.hotx = s.in_u16_le();
@@ -1115,7 +1129,7 @@ pub const rdpc_msg_t = struct
             cp.length_and_mask = s.in_u16_le();
             cp.length_xor_mask = s.in_u16_le();
         }
-        try self.priv.logln(@src(),
+        try self.priv.logln_devel(@src(),
                 "cache_index {} hotx {} hoty {} width {} height {} " ++
                 "length_and_mask {} length_xor_mask {}",
                 .{cp.cache_index, cp.hotx, cp.hoty, cp.width, cp.height,
@@ -1125,7 +1139,7 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     fn process_fp_color(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         var cp: c.pointer_t = .{};
         try self.read_pointer(s, &cp, false);
         try s.check_rem(cp.length_xor_mask);
@@ -1145,7 +1159,7 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     fn process_fp_cached(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(2);
         const cache_index = s.in_u16_le();
         if (self.priv.rdpc.pointer_cached) |apointer_cached|
@@ -1159,7 +1173,7 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     fn process_fp_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(2);
         const xorgBpp = s.in_u16_le();
         var cp: c.pointer_t = .{};
@@ -1182,7 +1196,7 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     fn process_fp_large_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(2);
         const xorgBpp = s.in_u16_le();
         var cp: c.pointer_t = .{};
@@ -1481,6 +1495,105 @@ pub const rdpc_msg_t = struct
         s.out_u16_le(keyboard_flags);           // keyboardFlags
         s.out_u16_le(key_code);                 // keyCode
         s.out_u8_skip(2);                       // pad2Octets
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try c_int_to_error(rv);
+        return rv;
+    }
+
+    //*************************************************************************
+    pub fn send_keyboard_sync(self: *rdpc_msg_t, toggle_flags: u32) !c_int
+    {
+        try self.priv.logln(@src(), "toggle_flags 0x{X}", .{toggle_flags});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 18 + 16);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.STREAM_MED);                 // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.PDUTYPE2_INPUT);             // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        // TS_INPUT_PDU_DATA
+        s.out_u16_le(1);                        // numEvents
+        s.out_u8_skip(2);                       // pad2Octets
+        // slowPathInputEvents
+        s.out_u8_skip(4);                       // eventTime
+        s.out_u16_le(c.INPUT_EVENT_SYNC);       // messageType
+        s.out_u8_skip(2);                       // pad2Octets
+        s.out_u32_le(toggle_flags);             // toggleFlags
+        // save end
+        s.push_layer(0, 5);
+        // rdp length
+        s.pop_layer(2);
+        s.out_u16_le(s.layer_subtract(5, 2));
+        // mcs
+        s.pop_layer(1);
+        const userid = self.mcs_userid;
+        const chanid = c.MCS_GLOBAL_CHANNEL;
+        try mcs_out_header(s, s.layer_subtract(5, 1), userid, chanid);
+        // iso
+        s.pop_layer(0);
+        try iso_out_data_header(s, s.layer_subtract(5, 0));
+        // back to end
+        s.pop_layer(5);
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try c_int_to_error(rv);
+        return rv;
+    }
+
+    //*************************************************************************
+    pub fn send_frame_ack(self: *rdpc_msg_t, frame_id: u32) !c_int
+    {
+        try self.priv.logln(@src(), "frame_id {}", .{frame_id});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        try s.check_rem(7 + 8 + 18 + 4);
+        s.push_layer(7, 0); // iso
+        s.push_layer(8, 1); // mcs
+        // sec
+        // shareControlHeader
+        s.push_layer(2, 2);
+        // shareControlHeader: insert pdu type; 2 bytes
+        // we support protocol version 1
+        s.out_u16_le((1 << 4) | c.PDUTYPE_DATAPDU);
+        // shareControlHeader: insert pdu source, i.e our channel ID; 2 bytes
+        s.out_u16_le(self.mcs_userid);
+        // insert share ID; 4 bytes
+        s.out_u32_le(self.rdp_share_id);
+        s.out_u8(0);                            // pad1
+        s.out_u8(c.STREAM_MED);                 // stream ID
+        s.out_u16_le(0);                        // uncompressed length
+        s.out_u8(c.PDUTYPE2_FRAME_ACKNOWLEDGE); // pduType2
+        s.out_u8(0);                            // compressed type
+        s.out_u16_le(0);                        // compressed length
+        s.out_u32_le(frame_id);
         // save end
         s.push_layer(0, 5);
         // rdp length

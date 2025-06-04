@@ -15,7 +15,7 @@ export fn rdpc_init() c_int
 }
 
 //*****************************************************************************
-// int rdpc_init(void);
+// int rdpc_deinit(void);
 export fn rdpc_deinit() c_int
 {
     return c.LIBRDPC_ERROR_NONE;
@@ -72,7 +72,7 @@ export fn rdpc_start(rdpc: ?*c.rdpc_t) c_int
 // int rdpc_process_server_data(rdpc_t* rdpc, void* data, int bytes_in_buf,
 //                         int* bytes_processed);
 export fn rdpc_process_server_data(rdpc: ?*c.rdpc_t,
-        data: ?*anyopaque, bytes: c_int, bytes_processed: ?*c_int) c_int
+        data: ?*anyopaque, bytes: u32, bytes_processed: ?*u32) c_int
 {
     // check if rdpc is nil
     if (rdpc) |ardpc|
@@ -84,7 +84,7 @@ export fn rdpc_process_server_data(rdpc: ?*c.rdpc_t,
             const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
             var slice: []u8 = undefined;
             slice.ptr = @ptrCast(adata);
-            slice.len = @intCast(bytes);
+            slice.len = bytes;
             const rv = priv.process_server_slice_data(slice, bytes_processed);
             if (rv) |arv|
             {
@@ -222,6 +222,30 @@ export fn rdpc_send_frame_ack(rdpc: ?*c.rdpc_t, frame_id: u32) c_int
             priv.logln(@src(), "send_frame_ack err {}",
                     .{err}) catch return c.LIBRDPC_ERROR_MEMORY;
             return rdpc_priv.error_to_c_int(err);
+        }
+    }
+    return c.LIBRDPC_ERROR_PARSE;
+}
+
+//*****************************************************************************
+// int rdpc_channel_send_data(struct rdpc_t* rdpc, uint16_t channel_id,
+//                            uint32_t total_bytes, uint32_t flags,
+//                            void* data, uint32_t bytes);
+export fn rdpc_channel_send_data(rdpc: ?*c.rdpc_t, channel_id: u16,
+        total_bytes: u32, flags: u32, data: ?*anyopaque, bytes: u32) c_int
+{
+    // check if rdpc is nil
+    if (rdpc) |ardpc|
+    {
+        if (data) |adata|
+        {
+            // cast c.rdpc_t to rdpc_priv.rdpc_priv_t
+            const priv: *rdpc_priv.rdpc_priv_t = @ptrCast(ardpc);
+            var slice: []u8 = undefined;
+            slice.ptr = @ptrCast(adata);
+            slice.len = bytes;
+            return priv.channel_send_data(channel_id, total_bytes, flags,
+                    slice) catch c.LIBRDPC_ERROR_PARSE;
         }
     }
     return c.LIBRDPC_ERROR_PARSE;

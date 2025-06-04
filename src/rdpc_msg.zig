@@ -25,6 +25,7 @@ pub const MsgError = error
     BadPointerUpdate,
     BadPointerCached,
     BadFrameMarker,
+    BadChannel,
 };
 
 //*****************************************************************************
@@ -109,11 +110,11 @@ pub fn get_struct_bytes(comptime T: type) u16
 
 pub const rdpc_msg_t = struct
 {
-    allocator: *const std.mem.Allocator = undefined,
+    priv: *rdpc_priv.rdpc_priv_t,
+    allocator: *const std.mem.Allocator,
     mcs_userid: u16 = 0,
     mcs_channels_joined: u16 = 0,
     rdp_share_id: u32 = 0,
-    priv: *rdpc_priv.rdpc_priv_t = undefined,
     frag_s: ?*parse.parse_t = null,
 
     //*************************************************************************
@@ -471,7 +472,7 @@ pub const rdpc_msg_t = struct
         try err_if(userid != self.mcs_userid, MsgError.BadUser);
         if (channel != c.MCS_GLOBAL_CHANNEL)
         {
-            return process_rdp_channel_pdu(self, s);
+            return self.process_rdp_channel_pdu(channel, s);
         }
         while (s.check_rem_bool(2))
         {
@@ -998,7 +999,7 @@ pub const rdpc_msg_t = struct
             cp: *c.pointer_t, is_large: bool) !void
     {
         try self.priv.logln_devel(@src(), "", .{});
-        try s.check_rem(14);
+        try s.check_rem(10);
         cp.cache_index = s.in_u16_le();
         cp.hotx = s.in_u16_le();
         cp.hoty = s.in_u16_le();
@@ -1006,11 +1007,13 @@ pub const rdpc_msg_t = struct
         cp.height = s.in_u16_le();
         if (is_large)
         {
+            try s.check_rem(8);
             cp.length_and_mask = s.in_u32_le();
             cp.length_xor_mask = s.in_u32_le();
         }
         else
         {
+            try s.check_rem(4);
             cp.length_and_mask = s.in_u16_le();
             cp.length_xor_mask = s.in_u16_le();
         }
@@ -1225,10 +1228,20 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
-    fn process_rdp_channel_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    fn process_rdp_channel_pdu(self: *rdpc_msg_t, channel_id: u16,
+            s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try self.priv.logln_devel(@src(), "", .{});
+        if (self.priv.rdpc.channel) |achannel|
+        {
+            const rem = s.get_rem();
+            try s.check_rem(rem);
+            const slice = s.in_u8_slice(rem);
+            const rv = achannel(&self.priv.rdpc, channel_id,
+                    slice.ptr, @truncate(slice.len));
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadChannel);
+        }
     }
 
     //*************************************************************************
@@ -1381,6 +1394,39 @@ pub const rdpc_msg_t = struct
     }
 
     //*************************************************************************
+    pub fn channel_send_data(self: *rdpc_msg_t, channel_id: u16,
+            total_bytes: u32, flags: u32, slice: []u8) !c_int
+    {
+        try self.priv.logln(@src(), "", .{});
+        const s = try parse.create(self.allocator, 8192);
+        defer s.delete();
+        // iso
+        const iso_length: u16 = @truncate(slice.len + 7 + 8 + 8);
+        try s.check_rem(iso_length);
+        s.out_u8(3);
+        s.out_u8(0);
+        s.out_u16_be(iso_length);
+        s.out_u8(2);
+        s.out_u8(c.ISO_PDU_DT);
+        s.out_u8(0x80);
+        // mcs
+        const mcs_length: u16 = @truncate(slice.len + 8);
+        s.out_u8(c.MCS_SDRQ << 2);
+        s.out_u16_be(self.mcs_userid);
+        s.out_u16_be(channel_id);
+        s.out_u8(0x70);
+        s.out_u16_be(mcs_length | 0x8000);
+        // channel
+        s.out_u32_le(total_bytes);
+        s.out_u32_le(flags);
+        s.out_u8_slice(slice);
+        // send
+        const rv = try self.priv.send_slice_to_server(s.get_out_slice());
+        try c_int_to_error(rv);
+        return rv;
+    }
+
+    //*************************************************************************
     fn out_headers(self: *rdpc_msg_t, s: *parse.parse_t, rdp_pduType2: u8,
             iso_offset: u8, mcs_offset: u8, rdp_offset: u8,
             end_offset: u8) !void
@@ -1425,9 +1471,7 @@ pub fn create(allocator: *const std.mem.Allocator,
         priv: *rdpc_priv.rdpc_priv_t) !*rdpc_msg_t
 {
     const msg = try allocator.create(rdpc_msg_t);
-    msg.* = .{};
-    msg.priv = priv;
-    msg.allocator = allocator;
+    msg.* = .{.priv = priv, .allocator = allocator};
     return msg;
 }
 

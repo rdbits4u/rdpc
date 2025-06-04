@@ -22,9 +22,9 @@ const rdpc_priv_sub_t = struct
 pub const rdpc_priv_t = extern struct
 {
     rdpc: c.struct_rdpc_t = .{},
-    allocator: *const std.mem.Allocator = undefined,
-    msg: *rdpc_msg.rdpc_msg_t = undefined,
-    sub: *rdpc_priv_sub_t = undefined,
+    allocator: *const std.mem.Allocator,
+    msg: *rdpc_msg.rdpc_msg_t,
+    sub: *rdpc_priv_sub_t,
 
     //*************************************************************************
     pub fn delete(self: *rdpc_priv_t) void
@@ -45,7 +45,7 @@ pub const rdpc_priv_t = extern struct
                     fmt, args);
             defer self.allocator.free(alloc_buf);
             const alloc1_buf = try std.fmt.allocPrintZ(self.allocator.*,
-                    "{s}:{s}", .{src.fn_name, alloc_buf});
+                    "rdpc:{s}:{s}", .{src.fn_name, alloc_buf});
             defer self.allocator.free(alloc1_buf);
             _ = alog_msg(&self.rdpc, alloc1_buf.ptr);
         }
@@ -89,7 +89,7 @@ pub const rdpc_priv_t = extern struct
 
     //*************************************************************************
     pub fn process_server_slice_data(self: *rdpc_priv_t, slice: []u8,
-            bytes_processed: ?*c_int) !c_int
+            bytes_processed: ?*u32) !c_int
     {
         try self.logln_devel(@src(), "in slice bytes {}", .{slice.len});
         var len: u16 = 0;
@@ -224,6 +224,21 @@ pub const rdpc_priv_t = extern struct
         {
             try self.logln_devel(@src(), "connected", .{});
             return self.msg.send_frame_ack(frame_id);
+        }
+        try self.logln(@src(), "not fully connected", .{});
+        return c.LIBRDPC_ERROR_NOT_CONNECTED;
+    }
+
+    //*************************************************************************
+    pub fn channel_send_data(self: *rdpc_priv_t, channel_id: u16,
+            total_bytes: u32, flags: u32, slice: []u8) !c_int
+    {
+        // make sure we are connected
+        if (rdpc_priv_t.state6_fn == self.sub.state_fn)
+        {
+            try self.logln_devel(@src(), "connected", .{});
+            return self.msg.channel_send_data(channel_id, total_bytes,
+                    flags, slice);
         }
         try self.logln(@src(), "not fully connected", .{});
         return c.LIBRDPC_ERROR_NOT_CONNECTED;
@@ -402,15 +417,15 @@ pub const rdpc_priv_t = extern struct
 pub fn create(allocator: *const std.mem.Allocator,
         settings: *c.struct_rdpc_settings_t) !*rdpc_priv_t
 {
+
     const priv: *rdpc_priv_t = try allocator.create(rdpc_priv_t);
     errdefer allocator.destroy(priv);
-    priv.* = .{};
-    priv.allocator = allocator;
-    priv.sub = try allocator.create(rdpc_priv_sub_t);
-    errdefer allocator.destroy(priv.sub);
-    priv.sub.* = .{};
-    priv.msg = try rdpc_msg.create(allocator, priv);
-    errdefer priv.msg.delete();
+    const  sub = try allocator.create(rdpc_priv_sub_t);
+    errdefer allocator.destroy(sub);
+    sub.* = .{};
+    const msg = try rdpc_msg.create(allocator, priv);
+    errdefer msg.delete();
+    priv.* = .{.allocator = allocator, .msg = msg, .sub = sub};
     // priv.msg gets initalized in create
     try rdpc_gcc.init_gcc_defaults(priv.msg, settings);
     try rdpc_msg.init_client_info_defaults(priv.msg, settings);

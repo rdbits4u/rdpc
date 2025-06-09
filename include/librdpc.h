@@ -32,10 +32,6 @@ struct rdpc_settings_t
     int bpp;
     int dpix;
     int dpiy;
-    int rdpsnd;
-    int cliprdr;
-    int rail;
-    int rdpdr;
     int rfx;
     int jpg;
     int use_frame_ack;

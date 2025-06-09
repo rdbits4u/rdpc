@@ -79,26 +79,6 @@ pub fn init_gcc_defaults(msg: *rdpc_msg.rdpc_msg_t,
     net.header.type = c.CS_NET;             // 0xC003
     net.header.length = 0;                  // calculated
     net.channelCount = 0;
-    if (settings.rdpsnd != 0)
-    {
-        out_channel(&net.channelDefArray[net.channelCount], "RDPSND", 0);
-        net.channelCount += 1;
-    }
-    if (settings.cliprdr != 0)
-    {
-        out_channel(&net.channelDefArray[net.channelCount], "CLIPRDR", 0);
-        net.channelCount += 1;
-    }
-    if (settings.rail != 0)
-    {
-        out_channel(&net.channelDefArray[net.channelCount], "RAIL", 0);
-        net.channelCount += 1;
-    }
-    if (settings.rdpdr != 0)
-    {
-        out_channel(&net.channelDefArray[net.channelCount], "RDPDR", 0);
-        net.channelCount += 1;
-    }
 }
 
 //*****************************************************************************

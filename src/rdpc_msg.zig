@@ -1397,7 +1397,7 @@ pub const rdpc_msg_t = struct
     pub fn channel_send_data(self: *rdpc_msg_t, channel_id: u16,
             total_bytes: u32, flags: u32, slice: []u8) !c_int
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         const s = try parse.create(self.allocator, 8192);
         defer s.delete();
         // iso

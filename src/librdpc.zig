@@ -31,8 +31,8 @@ export fn rdpc_create(settings: ?*c.rdpc_settings_t, rdpc: ?**c.rdpc_t) c_int
         // check if settings is nil
         if (settings) |asettings|
         {
-            const priv = rdpc_priv.create(&g_allocator, asettings) catch
-                return c.LIBRDPC_ERROR_MEMORY;
+            const priv = rdpc_priv.rdpc_priv_t.create(&g_allocator,
+                asettings) catch return c.LIBRDPC_ERROR_MEMORY;
             ardpc.* = @ptrCast(priv);
             return c.LIBRDPC_ERROR_NONE;
         }

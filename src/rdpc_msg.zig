@@ -118,6 +118,15 @@ pub const rdpc_msg_t = struct
     frag_s: ?*parse.parse_t = null,
 
     //*************************************************************************
+    pub fn create(allocator: *const std.mem.Allocator,
+            priv: *rdpc_priv.rdpc_priv_t) !*rdpc_msg_t
+    {
+        const msg = try allocator.create(rdpc_msg_t);
+        msg.* = .{.priv = priv, .allocator = allocator};
+        return msg;
+    }
+
+    //*************************************************************************
     pub fn delete(self: *rdpc_msg_t) void
     {
         if (self.frag_s) |afrag_s|
@@ -178,7 +187,7 @@ pub const rdpc_msg_t = struct
             s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        const gccs = try parse.create(self.allocator, 1024);
+        const gccs = try parse.parse_t.create(self.allocator, 1024);
         defer gccs.delete();
         try rdpc_gcc.gcc_out_data(self, gccs);
         const gcc_slice = gccs.get_out_slice();
@@ -252,7 +261,7 @@ pub const rdpc_msg_t = struct
         try mcs_in_domain_params(s);
         try ber_in_header(s, c.BER_TAG_OCTET_STRING, &length);
         try s.check_rem(length);
-        const ls = try parse.create_from_slice(self.allocator,
+        const ls = try parse.parse_t.create_from_slice(self.allocator,
                     s.in_u8_slice(length));
         defer ls.delete();
         try rdpc_gcc.gcc_in_data(self, ls);
@@ -482,7 +491,7 @@ pub const rdpc_msg_t = struct
             try err_if(pduLength < 6, MsgError.BadLength);
             try s.check_rem(pduLength - 2);
             s.pop_layer(0);
-            const ins = try parse.create_from_slice(self.allocator,
+            const ins = try parse.parse_t.create_from_slice(self.allocator,
                     s.in_u8_slice(pduLength));
             defer ins.delete();
             try self.process_rdp_pdu(ins);
@@ -507,7 +516,7 @@ pub const rdpc_msg_t = struct
         }
         try err_if(totallength < 6, MsgError.BadLength);
         try s.check_rem(totallength - 6);
-        const ins = try parse.create_from_slice(self.allocator,
+        const ins = try parse.parse_t.create_from_slice(self.allocator,
                 s.in_u8_slice(totallength - 6));
         defer ins.delete();
         switch (pdutype & 0xF)
@@ -549,7 +558,7 @@ pub const rdpc_msg_t = struct
                     .{index, cap_type, cap_len});
             try s.check_rem(cap_len - 4);
             s.pop_layer(0);
-            const ins = try parse.create_from_slice(self.allocator,
+            const ins = try parse.parse_t.create_from_slice(self.allocator,
                     s.in_u8_slice(cap_len));
             defer ins.delete();
             try rdpc_caps.process_cap(self, cap_type, ins);
@@ -570,7 +579,7 @@ pub const rdpc_msg_t = struct
     fn send_confirm_active(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 2 + 2 + 2 + 4 + 2 + 2 + 2 + 4 + 4);
         s.push_layer(7, 0);
@@ -652,7 +661,7 @@ pub const rdpc_msg_t = struct
     fn send_synchronize(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18);
         s.push_layer(7, 0); // iso
@@ -673,7 +682,7 @@ pub const rdpc_msg_t = struct
     fn send_control_cooperate(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 8);
         s.push_layer(7, 0); // iso
@@ -698,7 +707,7 @@ pub const rdpc_msg_t = struct
     fn send_control_req_control(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 8);
         s.push_layer(7, 0); // iso
@@ -723,7 +732,7 @@ pub const rdpc_msg_t = struct
     fn send_client_persistent_key_list(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 23);
         s.push_layer(7, 0); // iso
@@ -758,7 +767,7 @@ pub const rdpc_msg_t = struct
     fn send_client_font_list(self: *rdpc_msg_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 8);
         s.push_layer(7, 0); // iso
@@ -1157,7 +1166,7 @@ pub const rdpc_msg_t = struct
                 try s.check_rem(nbytes);
                 try afrag_s.check_rem(nbytes);
                 afrag_s.out_u8_slice(s.in_u8_slice(nbytes));
-                ls = try parse.create_from_slice(self.allocator,
+                ls = try parse.parse_t.create_from_slice(self.allocator,
                         afrag_s.get_out_slice());
                 try self.priv.logln_devel(@src(), "len {}", .{ls.data.len});
             }
@@ -1173,7 +1182,7 @@ pub const rdpc_msg_t = struct
             {
                 const scaps = self.priv.rdpc.scaps;
                 const max = scaps.multifragmentupdate.MaxRequestSize;
-                self.frag_s = try parse.create(self.allocator, max);
+                self.frag_s = try parse.parse_t.create(self.allocator, max);
             }
             if (self.frag_s) |afrag_s|
             {
@@ -1250,7 +1259,7 @@ pub const rdpc_msg_t = struct
     {
         try self.priv.logln_devel(@src(), "event 0x{X} xpos {} ypos {}",
                 .{event, xpos, ypos});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 16);
         s.push_layer(7, 0); // iso
@@ -1282,7 +1291,7 @@ pub const rdpc_msg_t = struct
     {
         try self.priv.logln_devel(@src(), "event 0x{X} xpos {} ypos {}",
                 .{event, xpos, ypos});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 16);
         s.push_layer(7, 0); // iso
@@ -1315,7 +1324,7 @@ pub const rdpc_msg_t = struct
         try self.priv.logln(@src(),
                 "keyboard_flags 0x{X} key_code {}",
                 .{keyboard_flags, key_code});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 16);
         s.push_layer(7, 0); // iso
@@ -1345,7 +1354,7 @@ pub const rdpc_msg_t = struct
     pub fn send_keyboard_sync(self: *rdpc_msg_t, toggle_flags: u32) !c_int
     {
         try self.priv.logln(@src(), "toggle_flags 0x{X}", .{toggle_flags});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 16);
         s.push_layer(7, 0); // iso
@@ -1374,7 +1383,7 @@ pub const rdpc_msg_t = struct
     pub fn send_frame_ack(self: *rdpc_msg_t, frame_id: u32) !c_int
     {
         try self.priv.logln_devel(@src(), "frame_id {}", .{frame_id});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         try s.check_rem(7 + 8 + 18 + 4);
         s.push_layer(7, 0); // iso
@@ -1398,7 +1407,7 @@ pub const rdpc_msg_t = struct
             total_bytes: u32, flags: u32, slice: []u8) !c_int
     {
         try self.priv.logln_devel(@src(), "", .{});
-        const s = try parse.create(self.allocator, 8192);
+        const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
         // iso
         const iso_length: u16 = @truncate(slice.len + 7 + 8 + 8);
@@ -1465,15 +1474,6 @@ pub const rdpc_msg_t = struct
     }
 
 };
-
-//*****************************************************************************
-pub fn create(allocator: *const std.mem.Allocator,
-        priv: *rdpc_priv.rdpc_priv_t) !*rdpc_msg_t
-{
-    const msg = try allocator.create(rdpc_msg_t);
-    msg.* = .{.priv = priv, .allocator = allocator};
-    return msg;
-}
 
 //*****************************************************************************
 fn ber_out_header(s: *parse.parse_t, tagval: u16, length: u16) !void

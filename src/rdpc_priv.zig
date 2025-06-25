@@ -27,6 +27,25 @@ pub const rdpc_priv_t = extern struct
     sub: *rdpc_priv_sub_t,
 
     //*************************************************************************
+    pub fn create(allocator: *const std.mem.Allocator,
+            settings: *c.struct_rdpc_settings_t) !*rdpc_priv_t
+    {
+        const priv: *rdpc_priv_t = try allocator.create(rdpc_priv_t);
+        errdefer allocator.destroy(priv);
+        const  sub = try allocator.create(rdpc_priv_sub_t);
+        errdefer allocator.destroy(sub);
+        sub.* = .{};
+        const msg = try rdpc_msg.rdpc_msg_t.create(allocator, priv);
+        errdefer msg.delete();
+        priv.* = .{.allocator = allocator, .msg = msg, .sub = sub};
+        // priv.msg gets initalized in create
+        try rdpc_gcc.init_gcc_defaults(priv.msg, settings);
+        try rdpc_msg.init_client_info_defaults(priv.msg, settings);
+        try rdpc_caps.init_caps_defaults(priv.msg, settings);
+        return priv;
+    }
+
+    //*************************************************************************
     pub fn delete(self: *rdpc_priv_t) void
     {
         self.msg.delete();
@@ -80,7 +99,7 @@ pub const rdpc_priv_t = extern struct
     pub fn start(self: *rdpc_priv_t) !c_int
     {
         try self.logln(@src(), "", .{});
-        const outs = try parse.create(self.allocator, 1024);
+        const outs = try parse.parse_t.create(self.allocator, 1024);
         defer outs.delete();
         self.sub.state_fn = rdpc_priv_t.state0_fn;
         try self.msg.connection_request(outs);
@@ -258,10 +277,10 @@ pub const rdpc_priv_t = extern struct
     fn state0_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         try self.logln(@src(), "", .{});
-        const ins = try parse.create_from_slice(self.allocator, slice);
+        const ins = try parse.parse_t.create_from_slice(self.allocator, slice);
         defer ins.delete();
         try self.msg.connection_confirm(ins);
-        const outs = try parse.create(self.allocator, 8192);
+        const outs = try parse.parse_t.create(self.allocator, 8192);
         defer outs.delete();
         try self.msg.conference_create_request(outs);
         const rv = try self.send_slice_to_server(outs.get_out_slice());
@@ -279,10 +298,10 @@ pub const rdpc_priv_t = extern struct
     fn state1_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         try self.logln(@src(), "", .{});
-        const ins = try parse.create_from_slice(self.allocator, slice);
+        const ins = try parse.parse_t.create_from_slice(self.allocator, slice);
         defer ins.delete();
         try self.msg.conference_create_response(ins);
-        const outs = try parse.create(self.allocator, 8192);
+        const outs = try parse.parse_t.create(self.allocator, 8192);
         defer outs.delete();
         try self.msg.erect_domain_request(outs);
         var rv = try self.send_slice_to_server(outs.get_out_slice());
@@ -305,10 +324,10 @@ pub const rdpc_priv_t = extern struct
     fn state2_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         try self.logln(@src(), "", .{});
-        const ins = try parse.create_from_slice(self.allocator, slice);
+        const ins = try parse.parse_t.create_from_slice(self.allocator, slice);
         defer ins.delete();
         try self.msg.attach_user_confirm(ins);
-        const outs = try parse.create(self.allocator, 8192);
+        const outs = try parse.parse_t.create(self.allocator, 8192);
         defer outs.delete();
         var rv: c_int = c.LIBRDPC_ERROR_NONE;
         // join MCS_USER_CHANNEL
@@ -329,12 +348,12 @@ pub const rdpc_priv_t = extern struct
     fn state3_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         try self.logln(@src(), "", .{});
-        const ins = try parse.create_from_slice(self.allocator, slice);
+        const ins = try parse.parse_t.create_from_slice(self.allocator, slice);
         defer ins.delete();
         var chanid: u16 = 0;
         try self.msg.channel_join_confirm(ins, &chanid);
         var rv: c_int = c.LIBRDPC_ERROR_NONE;
-        const outs = try parse.create(self.allocator, 8192);
+        const outs = try parse.parse_t.create(self.allocator, 8192);
         defer outs.delete();
         // join MCS_GLOBAL_CHANNEL
         chanid = c.MCS_GLOBAL_CHANNEL;
@@ -353,12 +372,12 @@ pub const rdpc_priv_t = extern struct
     fn state4_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         try self.logln(@src(), "", .{});
-        const ins = try parse.create_from_slice(self.allocator, slice);
+        const ins = try parse.parse_t.create_from_slice(self.allocator, slice);
         defer ins.delete();
         var chanid: u16 = 0;
         try self.msg.channel_join_confirm(ins, &chanid);
         var rv: c_int = c.LIBRDPC_ERROR_NONE;
-        const outs = try parse.create(self.allocator, 8192);
+        const outs = try parse.parse_t.create(self.allocator, 8192);
         defer outs.delete();
         const joined = self.msg.mcs_channels_joined;
         if (joined < self.rdpc.cgcc.net.channelCount)
@@ -393,7 +412,7 @@ pub const rdpc_priv_t = extern struct
     fn state5_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         try self.logln(@src(), "", .{});
-        const ins = try parse.create_from_slice(self.allocator, slice);
+        const ins = try parse.parse_t.create_from_slice(self.allocator, slice);
         defer ins.delete();
         try self.msg.process_sec(ins);
         self.sub.state_fn = rdpc_priv_t.state6_fn;
@@ -405,33 +424,13 @@ pub const rdpc_priv_t = extern struct
     fn state6_fn(self: *rdpc_priv_t, slice: []u8) !c_int
     {
         try self.logln_devel(@src(), "", .{});
-        const ins = try parse.create_from_slice(self.allocator, slice);
+        const ins = try parse.parse_t.create_from_slice(self.allocator, slice);
         defer ins.delete();
         try self.msg.process_rdp(ins);
         return c.LIBRDPC_ERROR_NONE;
     }
 
 };
-
-//*****************************************************************************
-pub fn create(allocator: *const std.mem.Allocator,
-        settings: *c.struct_rdpc_settings_t) !*rdpc_priv_t
-{
-
-    const priv: *rdpc_priv_t = try allocator.create(rdpc_priv_t);
-    errdefer allocator.destroy(priv);
-    const  sub = try allocator.create(rdpc_priv_sub_t);
-    errdefer allocator.destroy(sub);
-    sub.* = .{};
-    const msg = try rdpc_msg.create(allocator, priv);
-    errdefer msg.delete();
-    priv.* = .{.allocator = allocator, .msg = msg, .sub = sub};
-    // priv.msg gets initalized in create
-    try rdpc_gcc.init_gcc_defaults(priv.msg, settings);
-    try rdpc_msg.init_client_info_defaults(priv.msg, settings);
-    try rdpc_caps.init_caps_defaults(priv.msg, settings);
-    return priv;
-}
 
 //*****************************************************************************
 pub fn error_to_c_int(err: anyerror) c_int

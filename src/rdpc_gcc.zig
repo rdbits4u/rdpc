@@ -337,7 +337,7 @@ pub fn gcc_in_data(msg: *rdpc_msg.rdpc_msg_t, s: *parse.parse_t) !void
         try s.check_rem(tag_len - 4);
         // code block for defer
         {
-            const ls = try parse.create_from_slice(msg.allocator,
+            const ls = try parse.parse_t.create_from_slice(msg.allocator,
                     s.in_u8_slice(tag_len - 4));
             defer ls.delete();
             switch (tag)

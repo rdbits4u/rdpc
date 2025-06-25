@@ -1359,7 +1359,7 @@ pub fn init_caps_defaults(msg: *rdpc_msg.rdpc_msg_t,
         const bc = &ccaps.bitmapcodecs;
         bc.capabilitySetType = c.CAPSETTYPE_BITMAP_CODECS;
         bc.lengthCapability = 0; // calculated
-        const s = try parse.create_from_slice(msg.allocator,
+        const s = try parse.parse_t.create_from_slice(msg.allocator,
                 &bc.supportedBitmapCodecs);
         defer s.delete();
         try s.check_rem(1);

@@ -89,6 +89,10 @@ struct rdpc_t
                           struct pointer_t* pointer);
     int (*pointer_cached)(struct rdpc_t* rdpc,
                           uint16_t cache_index);
+    int (*pointer_system)(struct rdpc_t* rdpc,
+                          uint32_t id);
+    int (*pointer_pos)(struct rdpc_t* rdpc,
+                       uint16_t x, uint16_t y);
     int (*channel)(struct rdpc_t* rdpc, uint16_t channel_id,
                    void* data, uint32_t bytes);
     void* user;

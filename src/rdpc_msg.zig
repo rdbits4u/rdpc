@@ -24,6 +24,8 @@ pub const MsgError = error
     BadSetSurfaceBits,
     BadPointerUpdate,
     BadPointerCached,
+    BadPointerSystem,
+    BadPointerPos,
     BadFrameMarker,
     BadChannel,
 };
@@ -983,24 +985,48 @@ pub const rdpc_msg_t = struct
     }
 
     //*************************************************************************
+    // 2.2.9.1.2.1.5 Fast-Path System Pointer Hidden Update
     fn process_fp_ptr_null(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
         _ = s;
+        try self.priv.logln_devel(@src(), "", .{});
+        if (self.priv.rdpc.pointer_system) |apointer_system|
+        {
+            const rv = apointer_system(&self.priv.rdpc, 0);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerSystem);
+        }
     }
 
     //*************************************************************************
+    // 2.2.9.1.2.1.6 Fast-Path System Pointer Default Update
     fn process_fp_ptr_default(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
         _ = s;
+        try self.priv.logln_devel(@src(), "", .{});
+        if (self.priv.rdpc.pointer_system) |apointer_system|
+        {
+            const IDC_ARROW: u32 = 32512;
+            const rv = apointer_system(&self.priv.rdpc, IDC_ARROW);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerSystem);
+        }
     }
 
     //*************************************************************************
+    // 2.2.9.1.2.1.4 Fast-Path Pointer Position Update
     fn process_fp_ptr_position(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try self.priv.logln_devel(@src(), "", .{});
+        if (self.priv.rdpc.pointer_pos) |apointer_pos|
+        {
+            try s.check_rem(4);
+            const x = s.in_u16_le();
+            const y = s.in_u16_le();
+            const rv = apointer_pos(&self.priv.rdpc, x, y);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerPos);
+        }
     }
 
     //*************************************************************************

@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     // librdpc
-    const librdpc = b.addSharedLibrary(.{
+    const librdpc = b.addStaticLibrary(.{
         .name = "rdpc",
         .root_source_file = b.path("src/librdpc.zig"),
         .target = target,

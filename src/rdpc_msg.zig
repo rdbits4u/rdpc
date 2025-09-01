@@ -21,6 +21,7 @@ pub const MsgError = error
     BadLength,
     BadParse,
     BadMemory,
+    BadBitmapUpdate,
     BadSetSurfaceBits,
     BadPointerUpdate,
     BadPointerCached,
@@ -802,8 +803,41 @@ pub const rdpc_msg_t = struct
     // in
     fn process_data_update_bitmap(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try self.priv.logln_devel(@src(), "", .{});
+        if (self.priv.rdpc.bitmap_update) |abitmap_update|
+        {
+            try s.check_rem(2);
+            const numberRectangles = s.in_u16_le();
+            var index: u16 = 0;
+            while (index < numberRectangles) : (index += 1)
+            {
+                var bd: c.bitmap_data_t = .{};
+                try s.check_rem(18);
+                bd.dest_left = s.in_u16_le();
+                bd.dest_top = s.in_u16_le();
+                bd.dest_right = s.in_u16_le();
+                bd.dest_bottom = s.in_u16_le();
+                bd.width = s.in_u16_le();
+                bd.height = s.in_u16_le();
+                bd.bits_per_pixel = s.in_u16_le();
+                bd.flags = s.in_u16_le();
+                bd.bitmap_data_len = s.in_u16_le();
+                if ((bd.flags & c.NO_BITMAP_COMPRESSION_HDR) == 0)
+                {
+                    try s.check_rem(8);
+                    bd.cb_comp_first_row_size = s.in_u16_le();
+                    bd.cb_comp_main_body_size = s.in_u16_le();
+                    bd.cb_scan_width = s.in_u16_le();
+                    bd.cb_uncompressed_size = s.in_u16_le();
+                }
+                try s.check_rem(bd.bitmap_data_len);
+                const bitmap_data = s.in_u8_slice(bd.bitmap_data_len);
+                bd.bitmap_data = bitmap_data.ptr;
+                const rv = abitmap_update(&self.priv.rdpc, &bd);
+                try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                        MsgError.BadBitmapUpdate);
+            }
+        }
     }
 
     //*************************************************************************
@@ -826,7 +860,7 @@ pub const rdpc_msg_t = struct
     // in
     fn process_data_update(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
+        try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(2);
         const updateType = s.in_u16_le();
         switch (updateType)
@@ -922,7 +956,7 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     fn process_fp_surfcmds(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        var bd: c.bitmap_data_t = .{};
+        var bd: c.bitmap_data_ex_t = .{};
         try s.check_rem(2);
         const cmdType = s.in_u16_le();
         try self.priv.logln_devel(@src(), "nbytes {} cmdType {}",

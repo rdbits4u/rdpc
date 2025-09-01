@@ -38,8 +38,28 @@ struct rdpc_settings_t
     unsigned int frames_in_flight;
 };
 
-// set_surface_bits
+// bitmap_update
 struct bitmap_data_t
+{
+    uint16_t dest_left;
+    uint16_t dest_top;
+    uint16_t dest_right;
+    uint16_t dest_bottom;
+    uint16_t width;
+    uint16_t height;
+    uint16_t bits_per_pixel;
+    uint16_t flags;
+    uint16_t bitmap_data_len;
+    // bitmapComprHdr (optional)
+    uint16_t cb_comp_first_row_size;
+    uint16_t cb_comp_main_body_size;
+    uint16_t cb_scan_width;
+    uint16_t cb_uncompressed_size;
+    void* bitmap_data;
+};
+
+// set_surface_bits
+struct bitmap_data_ex_t
 {
     uint8_t bits_per_pixel;
     uint8_t flags;
@@ -81,8 +101,10 @@ struct rdpc_t
     // function calls this library makes, assigned by application
     int (*log_msg)(struct rdpc_t* rdpc, const char* msg);
     int (*send_to_server)(struct rdpc_t* rdpc, void* data, uint32_t bytes);
+    int (*bitmap_update)(struct rdpc_t* rdpc,
+                         struct bitmap_data_t* bitmap_data);
     int (*set_surface_bits)(struct rdpc_t* rdpc,
-                            struct bitmap_data_t* bitmap_data);
+                            struct bitmap_data_ex_t* bitmap_data);
     int (*frame_marker)(struct rdpc_t* rdpc, uint16_t frame_action,
                         uint32_t frame_id);
     int (*pointer_update)(struct rdpc_t* rdpc,

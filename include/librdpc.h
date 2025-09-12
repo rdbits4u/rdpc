@@ -43,8 +43,8 @@ struct bitmap_data_t
 {
     uint16_t dest_left;
     uint16_t dest_top;
-    uint16_t dest_right;
-    uint16_t dest_bottom;
+    uint16_t dest_right; // inclusive
+    uint16_t dest_bottom; // inclusive
     uint16_t width;
     uint16_t height;
     uint16_t bits_per_pixel;
@@ -67,8 +67,8 @@ struct bitmap_data_ex_t
     uint8_t pad0;
     uint16_t dest_left;
     uint16_t dest_top;
-    uint16_t dest_right;
-    uint16_t dest_bottom;
+    uint16_t dest_right; // exclusive
+    uint16_t dest_bottom; // exclusive
     uint16_t width;
     uint16_t height;
     uint32_t bitmap_data_len;

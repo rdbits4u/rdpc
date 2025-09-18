@@ -935,8 +935,13 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     fn process_fp_bitmap(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
-        try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try self.priv.logln_devel(@src(), "", .{});
+        try s.check_rem(2);
+        const updateType = s.in_u16_le();
+        if (updateType == c.UPDATETYPE_BITMAP)
+        {
+            return self.process_data_update_bitmap(s);
+        }
     }
 
     //*************************************************************************

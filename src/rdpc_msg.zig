@@ -503,6 +503,13 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
+    pub fn process_rdp_unhandled(self: *rdpc_msg_t, pdutype: u16) !void
+    {
+        try self.priv.logln_devel(@src(), "pdutype 0x{X}", .{pdutype});
+    }
+
+    //*************************************************************************
+    // in
     fn process_rdp_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln_devel(@src(), "", .{});
@@ -522,12 +529,12 @@ pub const rdpc_msg_t = struct
         const ins = try parse.parse_t.create_from_slice(self.allocator,
                 s.in_u8_slice(totallength - 6));
         defer ins.delete();
-        switch (pdutype & 0xF)
+        return switch (pdutype & 0xF)
         {
-            c.PDUTYPE_DEMANDACTIVEPDU => try process_rdp_demand_active(self, ins),
-            c.PDUTYPE_DATAPDU => try process_rdp_data(self, ins),
-            else => return MsgError.BadCode,
-        }
+            c.PDUTYPE_DEMANDACTIVEPDU => self.process_rdp_demand_active(ins),
+            c.PDUTYPE_DATAPDU => self.process_rdp_data(ins),
+            else => self.process_rdp_unhandled(pdutype & 0xF),
+        };
     }
 
     //*************************************************************************
@@ -858,19 +865,26 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
+    fn process_data_update_unhandled(self: *rdpc_msg_t, updateType: u16) !void
+    {
+        try self.priv.logln(@src(), "updateType 0x{X}", .{updateType});
+    }
+
+    //*************************************************************************
+    // in
     fn process_data_update(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln_devel(@src(), "", .{});
         try s.check_rem(2);
         const updateType = s.in_u16_le();
-        switch (updateType)
+        return switch (updateType)
         {
-            c.UPDATETYPE_ORDERS => try process_data_update_orders(self, s),
-            c.UPDATETYPE_BITMAP => try process_data_update_bitmap(self, s),
-            c.UPDATETYPE_PALETTE => try prcoess_data_update_palette(self, s),
-            c.UPDATETYPE_SYNCHRONIZE => try process_data_update_synchronize(self, s),
-            else => return MsgError.BadCode,
-        }
+            c.UPDATETYPE_ORDERS => self.process_data_update_orders(s),
+            c.UPDATETYPE_BITMAP => self.process_data_update_bitmap(s),
+            c.UPDATETYPE_PALETTE => self.prcoess_data_update_palette(s),
+            c.UPDATETYPE_SYNCHRONIZE => self.process_data_update_synchronize(s),
+            else => self.process_data_update_unhandled(updateType),
+        };
     }
 
     //*************************************************************************
@@ -930,15 +944,15 @@ pub const rdpc_msg_t = struct
                 "pduType2 0x{X} compressedType 0x{X} compressedLength {}",
                 .{shareID, streamID, uncompressedLength, pduType2,
                 compressedType, compressedLength});
-        switch (pduType2)
+        return switch (pduType2)
         {
-            c.PDUTYPE2_UPDATE => try process_data_update(self, s),
-            c.PDUTYPE2_CONTROL => try process_data_control(self, s),
-            c.PDUTYPE2_POINTER => try process_data_pointer(self, s),
-            c.PDUTYPE2_SYNCHRONIZE => try process_data_synchronize(self, s),
-            c.PDUTYPE2_FONTMAP => try process_data_fontmap(self, s),
-            else => try process_data_unhandled(self, pduType2),
-        }
+            c.PDUTYPE2_UPDATE => process_data_update(self, s),
+            c.PDUTYPE2_CONTROL => process_data_control(self, s),
+            c.PDUTYPE2_POINTER => process_data_pointer(self, s),
+            c.PDUTYPE2_SYNCHRONIZE => process_data_synchronize(self, s),
+            c.PDUTYPE2_FONTMAP => process_data_fontmap(self, s),
+            else => process_data_unhandled(self, pduType2),
+        };
     }
 
     //*************************************************************************
@@ -1195,6 +1209,12 @@ pub const rdpc_msg_t = struct
     }
 
     //*************************************************************************
+    fn process_fp_unhandled(self: *rdpc_msg_t, updateCode: u8) !void
+    {
+        try self.priv.logln(@src(), "updateCode 0x{X}", .{updateCode});
+    }
+
+    //*************************************************************************
     // in
     fn process_rdp_fastpath_pdu(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
@@ -1235,6 +1255,7 @@ pub const rdpc_msg_t = struct
                  .{updateCode, fragmentation,
                  compression, size});
         var ls = s;
+        defer if (ls != s) { ls.delete(); }; // pointer compare
         if (fragmentation == c.FASTPATH_FRAGMENT_SINGLE)
         {
             // ok process updateCode
@@ -1294,26 +1315,22 @@ pub const rdpc_msg_t = struct
             }
             return;
         }
-        switch (updateCode)
+        return switch (updateCode)
         {
-            c.FASTPATH_UPDATETYPE_ORDERS => try process_fp_orders(self, ls),
-            c.FASTPATH_UPDATETYPE_BITMAP => try process_fp_bitmap(self, ls),
-            c.FASTPATH_UPDATETYPE_PALETTE => try process_fp_palette(self, ls),
-            c.FASTPATH_UPDATETYPE_SYNCHRONIZE => try process_fp_synchronize(self, ls),
-            c.FASTPATH_UPDATETYPE_SURFCMDS => try process_fp_surfcmds(self, ls),
-            c.FASTPATH_UPDATETYPE_PTR_NULL => try process_fp_ptr_null(self, ls),
-            c.FASTPATH_UPDATETYPE_PTR_DEFAULT => try process_fp_ptr_default(self, ls),
-            c.FASTPATH_UPDATETYPE_PTR_POSITION => try process_fp_ptr_position(self, ls),
-            c.FASTPATH_UPDATETYPE_COLOR => try process_fp_color(self, ls),
-            c.FASTPATH_UPDATETYPE_CACHED => try process_fp_cached(self, ls),
-            c.FASTPATH_UPDATETYPE_POINTER => try process_fp_pointer(self, ls),
-            c.FASTPATH_UPDATETYPE_LARGE_POINTER => try process_fp_large_pointer(self, ls),
-            else => return MsgError.BadCode,
-        }
-        if (ls != s) // pointer compare
-        {
-            ls.delete();
-        }
+            c.FASTPATH_UPDATETYPE_ORDERS => self.process_fp_orders(ls),
+            c.FASTPATH_UPDATETYPE_BITMAP => self.process_fp_bitmap(ls),
+            c.FASTPATH_UPDATETYPE_PALETTE => self.process_fp_palette(ls),
+            c.FASTPATH_UPDATETYPE_SYNCHRONIZE => self.process_fp_synchronize(ls),
+            c.FASTPATH_UPDATETYPE_SURFCMDS => self.process_fp_surfcmds(ls),
+            c.FASTPATH_UPDATETYPE_PTR_NULL => self.process_fp_ptr_null(ls),
+            c.FASTPATH_UPDATETYPE_PTR_DEFAULT => self.process_fp_ptr_default(ls),
+            c.FASTPATH_UPDATETYPE_PTR_POSITION => self.process_fp_ptr_position(ls),
+            c.FASTPATH_UPDATETYPE_COLOR => self.process_fp_color(ls),
+            c.FASTPATH_UPDATETYPE_CACHED => self.process_fp_cached(ls),
+            c.FASTPATH_UPDATETYPE_POINTER => self.process_fp_pointer(ls),
+            c.FASTPATH_UPDATETYPE_LARGE_POINTER => self.process_fp_large_pointer(ls),
+            else => self.process_fp_unhandled(updateCode),
+        };
     }
 
     //*************************************************************************

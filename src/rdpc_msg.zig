@@ -883,6 +883,14 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
+    fn process_data_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        _ = s;
+    }
+
+    //*************************************************************************
+    // in
     fn process_data_synchronize(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
@@ -895,6 +903,13 @@ pub const rdpc_msg_t = struct
     {
         try self.priv.logln(@src(), "", .{});
         _ = s;
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_unhandled(self: *rdpc_msg_t, pduType2: u8) !void
+    {
+        try self.priv.logln(@src(), "pduType2 0x{X}", .{pduType2});
     }
 
     //*************************************************************************
@@ -919,9 +934,10 @@ pub const rdpc_msg_t = struct
         {
             c.PDUTYPE2_UPDATE => try process_data_update(self, s),
             c.PDUTYPE2_CONTROL => try process_data_control(self, s),
+            c.PDUTYPE2_POINTER => try process_data_pointer(self, s),
             c.PDUTYPE2_SYNCHRONIZE => try process_data_synchronize(self, s),
             c.PDUTYPE2_FONTMAP => try process_data_fontmap(self, s),
-            else => return MsgError.BadCode,
+            else => try process_data_unhandled(self, pduType2),
         }
     }
 

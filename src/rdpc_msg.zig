@@ -897,10 +897,45 @@ pub const rdpc_msg_t = struct
 
     //*************************************************************************
     // in
+    fn process_data_pointer_system(self: *rdpc_msg_t, s: *parse.parse_t) !void
+    {
+        try self.priv.logln(@src(), "", .{});
+        try s.check_rem(4);
+        const systemPointerType = s.in_u32_le();
+        if (self.priv.rdpc.pointer_system) |apointer_system|
+        {
+            const rv = apointer_system(&self.priv.rdpc, systemPointerType);
+            try err_if(rv != c.LIBRDPC_ERROR_NONE,
+                    MsgError.BadPointerSystem);
+        }
+    }
+
+    //*************************************************************************
+    // in
+    fn process_data_pointer_unhandled(self: *rdpc_msg_t, messageType: u16) !void
+    {
+        try self.priv.logln(@src(), "messageType 0x{X}", .{messageType});
+    }
+
+    //*************************************************************************
+    // in
+    // slow path pointer update
     fn process_data_pointer(self: *rdpc_msg_t, s: *parse.parse_t) !void
     {
         try self.priv.logln(@src(), "", .{});
-        _ = s;
+        try s.check_rem(4);
+        const messageType = s.in_u16_le();
+        try self.priv.logln(@src(), "messageType {}", .{messageType});
+        s.in_u8_skip(2); // pad2Octets
+        return switch (messageType)
+        {
+            c.TS_PTRMSGTYPE_SYSTEM => self.process_data_pointer_system(s),
+            c.TS_PTRMSGTYPE_POSITION => self.process_fp_ptr_position(s),
+            c.TS_PTRMSGTYPE_COLOR => self.process_fp_color(s),
+            c.TS_PTRMSGTYPE_CACHED => self.process_fp_cached(s),
+            c.TS_PTRMSGTYPE_POINTER => self.process_fp_pointer(s),
+            else => self.process_data_pointer_unhandled(messageType),
+        };
     }
 
     //*************************************************************************
@@ -946,12 +981,12 @@ pub const rdpc_msg_t = struct
                 compressedType, compressedLength});
         return switch (pduType2)
         {
-            c.PDUTYPE2_UPDATE => process_data_update(self, s),
-            c.PDUTYPE2_CONTROL => process_data_control(self, s),
-            c.PDUTYPE2_POINTER => process_data_pointer(self, s),
-            c.PDUTYPE2_SYNCHRONIZE => process_data_synchronize(self, s),
-            c.PDUTYPE2_FONTMAP => process_data_fontmap(self, s),
-            else => process_data_unhandled(self, pduType2),
+            c.PDUTYPE2_UPDATE => self.process_data_update(s),
+            c.PDUTYPE2_CONTROL => self.process_data_control(s),
+            c.PDUTYPE2_POINTER => self.process_data_pointer(s),
+            c.PDUTYPE2_SYNCHRONIZE => self.process_data_synchronize(s),
+            c.PDUTYPE2_FONTMAP => self.process_data_fontmap(s),
+            else => self.process_data_unhandled(pduType2),
         };
     }
 

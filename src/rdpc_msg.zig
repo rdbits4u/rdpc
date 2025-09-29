@@ -1455,7 +1455,7 @@ pub const rdpc_msg_t = struct
             key_code: u16) !c_int
     {
         try self.priv.logln(@src(),
-                "keyboard_flags 0x{X} key_code {}",
+                "keyboard_flags 0x{X:0>4.0} key_code 0x{X:0>4.0}",
                 .{keyboard_flags, key_code});
         const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();

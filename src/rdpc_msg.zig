@@ -119,6 +119,7 @@ pub const rdpc_msg_t = struct
     mcs_channels_joined: u16 = 0,
     rdp_share_id: u32 = 0,
     frag_s: ?*parse.parse_t = null,
+    can_send_fastpath_input: bool = false,
 
     //*************************************************************************
     pub fn create(allocator: *const std.mem.Allocator,
@@ -582,6 +583,16 @@ pub const rdpc_msg_t = struct
         try send_control_req_control(self);
         try send_client_persistent_key_list(self);
         try send_client_font_list(self);
+
+        const server_flags = self.priv.rdpc.scaps.input.inputFlags;
+        const client_flags = self.priv.rdpc.ccaps.input.inputFlags;
+        const fastpath_flags: u16 =
+               c.INPUT_FLAG_FASTPATH_INPUT |
+               c.INPUT_FLAG_FASTPATH_INPUT2;
+        self.can_send_fastpath_input =
+               ((server_flags & fastpath_flags) != 0) and
+               ((client_flags & fastpath_flags) != 0);
+
     }
 
     //*************************************************************************
@@ -1394,24 +1405,38 @@ pub const rdpc_msg_t = struct
                 .{event, xpos, ypos});
         const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 18 + 16);
-        s.push_layer(7, 0); // iso
-        s.push_layer(8, 1); // mcs
-        // sec todo
-        s.push_layer(18, 2); // rdp
-        // TS_INPUT_PDU_DATA
-        s.out_u16_le(1);                        // numEvents
-        s.out_u8_skip(2);                       // pad2Octets
-        // slowPathInputEvents
-        s.out_u8_skip(4);                       // eventTime
-        s.out_u16_le(c.INPUT_EVENT_MOUSE);      // messageType
-        s.out_u16_le(event);                    // pointerFlags
-        s.out_u16_le(xpos);                     // xPos
-        s.out_u16_le(ypos);                     // yPos
-        // save end
-        s.push_layer(0, 5);
-        // fill in headers
-        try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        if (self.can_send_fastpath_input)
+        {
+            try s.check_rem(9);
+            s.out_u8(1 << 2);                   // fpInputHeader, 1 event
+            s.out_u8(9);                        // length1
+            const eventHeader: u8 = c.FASTPATH_INPUT_EVENT_MOUSE << 5;
+            s.out_u8(eventHeader);              // eventHeader
+            s.out_u16_le(event);                // pointerFlags
+            s.out_u16_le(xpos);                 // xPos
+            s.out_u16_le(ypos);                 // yPos
+        }
+        else
+        {
+            try s.check_rem(7 + 8 + 18 + 16);
+            s.push_layer(7, 0);                 // iso
+            s.push_layer(8, 1);                 // mcs
+            // sec todo
+            s.push_layer(18, 2);                // rdp
+            // TS_INPUT_PDU_DATA
+            s.out_u16_le(1);                    // numEvents
+            s.out_u8_skip(2);                   // pad2Octets
+            // slowPathInputEvents
+            s.out_u8_skip(4);                   // eventTime
+            s.out_u16_le(c.INPUT_EVENT_MOUSE);  // messageType
+            s.out_u16_le(event);                // pointerFlags
+            s.out_u16_le(xpos);                 // xPos
+            s.out_u16_le(ypos);                 // yPos
+            // save end
+            s.push_layer(0, 5);
+            // fill in headers
+            try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        }
         // send
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
         try c_int_to_error(rv);
@@ -1426,24 +1451,38 @@ pub const rdpc_msg_t = struct
                 .{event, xpos, ypos});
         const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 18 + 16);
-        s.push_layer(7, 0); // iso
-        s.push_layer(8, 1); // mcs
-        // sec todo
-        s.push_layer(18, 2); // rdp
-        // TS_INPUT_PDU_DATA
-        s.out_u16_le(1);                        // numEvents
-        s.out_u8_skip(2);                       // pad2Octets
-        // slowPathInputEvents
-        s.out_u8_skip(4);                       // eventTime
-        s.out_u16_le(c.INPUT_EVENT_MOUSEX);     // messageType
-        s.out_u16_le(event);                    // pointerFlags
-        s.out_u16_le(xpos);                     // xPos
-        s.out_u16_le(ypos);                     // yPos
-        // save end
-        s.push_layer(0, 5);
-        // fill in headers
-        try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        if (self.can_send_fastpath_input)
+        {
+            try s.check_rem(9);
+            s.out_u8(1 << 2);                   // fpInputHeader, 1 event
+            s.out_u8(9);                        // length1
+            const eventHeader: u8 = c.FASTPATH_INPUT_EVENT_MOUSEX << 5;
+            s.out_u8(eventHeader);              // eventHeader
+            s.out_u16_le(event);                // pointerFlags
+            s.out_u16_le(xpos);                 // xPos
+            s.out_u16_le(ypos);                 // yPos
+        }
+        else
+        {
+            try s.check_rem(7 + 8 + 18 + 16);
+            s.push_layer(7, 0);                 // iso
+            s.push_layer(8, 1);                 // mcs
+            // sec todo
+            s.push_layer(18, 2);                // rdp
+            // TS_INPUT_PDU_DATA
+            s.out_u16_le(1);                    // numEvents
+            s.out_u8_skip(2);                   // pad2Octets
+            // slowPathInputEvents
+            s.out_u8_skip(4);                   // eventTime
+            s.out_u16_le(c.INPUT_EVENT_MOUSEX); // messageType
+            s.out_u16_le(event);                // pointerFlags
+            s.out_u16_le(xpos);                 // xPos
+            s.out_u16_le(ypos);                 // yPos
+            // save end
+            s.push_layer(0, 5);
+            // fill in headers
+            try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        }
         // send
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
         try c_int_to_error(rv);
@@ -1454,29 +1493,47 @@ pub const rdpc_msg_t = struct
     pub fn send_keyboard_scancode(self: *rdpc_msg_t, keyboard_flags: u16,
             key_code: u16) !c_int
     {
-        try self.priv.logln(@src(),
+        try self.priv.logln_devel(@src(),
                 "keyboard_flags 0x{X:0>4.0} key_code 0x{X:0>4.0}",
                 .{keyboard_flags, key_code});
         const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 18 + 16);
-        s.push_layer(7, 0); // iso
-        s.push_layer(8, 1); // mcs
-        // sec todo
-        s.push_layer(18, 2); // rdp
-        // TS_INPUT_PDU_DATA
-        s.out_u16_le(1);                        // numEvents
-        s.out_u8_skip(2);                       // pad2Octets
-        // slowPathInputEvents
-        s.out_u8_skip(4);                       // eventTime
-        s.out_u16_le(c.INPUT_EVENT_SCANCODE);   // messageType
-        s.out_u16_le(keyboard_flags);           // keyboardFlags
-        s.out_u16_le(key_code);                 // keyCode
-        s.out_u8_skip(2);                       // pad2Octets
-        // save end
-        s.push_layer(0, 5);
-        // fill in headers
-        try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        if (self.can_send_fastpath_input)
+        {
+            try s.check_rem(4);
+            s.out_u8(1 << 2);                   // fpInputHeader, 1 event
+            s.out_u8(4);                        // length1
+            var eventHeader: u8 = c.FASTPATH_INPUT_EVENT_SCANCODE << 5;
+            if ((keyboard_flags & c.KBDFLAGS_RELEASE) != 0)
+                eventHeader |= c.FASTPATH_INPUT_KBDFLAGS_RELEASE;
+            if ((keyboard_flags & c.KBDFLAGS_EXTENDED) != 0)
+                eventHeader |= c.FASTPATH_INPUT_KBDFLAGS_EXTENDED;
+            if ((keyboard_flags & c.KBDFLAGS_EXTENDED1) != 0)
+                eventHeader |= c.FASTPATH_INPUT_KBDFLAGS_EXTENDED1;
+            s.out_u8(eventHeader);              // eventHeader
+            s.out_u8(@truncate(key_code));      // keyCode
+        }
+        else
+        {
+            try s.check_rem(7 + 8 + 18 + 16);
+            s.push_layer(7, 0);                 // iso
+            s.push_layer(8, 1);                 // mcs
+            // sec todo
+            s.push_layer(18, 2);                // rdp
+            // TS_INPUT_PDU_DATA
+            s.out_u16_le(1);                    // numEvents
+            s.out_u8_skip(2);                   // pad2Octets
+            // slowPathInputEvents
+            s.out_u8_skip(4);                   // eventTime
+            s.out_u16_le(c.INPUT_EVENT_SCANCODE);   // messageType
+            s.out_u16_le(keyboard_flags);       // keyboardFlags
+            s.out_u16_le(key_code);             // keyCode
+            s.out_u8_skip(2);                   // pad2Octets
+            // save end
+            s.push_layer(0, 5);
+            // fill in headers
+            try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        }
         // send
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
         try c_int_to_error(rv);
@@ -1486,26 +1543,45 @@ pub const rdpc_msg_t = struct
     //*************************************************************************
     pub fn send_keyboard_sync(self: *rdpc_msg_t, toggle_flags: u32) !c_int
     {
-        try self.priv.logln(@src(), "toggle_flags 0x{X}", .{toggle_flags});
+        try self.priv.logln_devel(@src(), "toggle_flags 0x{X}", .{toggle_flags});
         const s = try parse.parse_t.create(self.allocator, 8192);
         defer s.delete();
-        try s.check_rem(7 + 8 + 18 + 16);
-        s.push_layer(7, 0); // iso
-        s.push_layer(8, 1); // mcs
-        // sec todo
-        s.push_layer(18, 2); // rdp
-        // TS_INPUT_PDU_DATA
-        s.out_u16_le(1);                        // numEvents
-        s.out_u8_skip(2);                       // pad2Octets
-        // slowPathInputEvents
-        s.out_u8_skip(4);                       // eventTime
-        s.out_u16_le(c.INPUT_EVENT_SYNC);       // messageType
-        s.out_u8_skip(2);                       // pad2Octets
-        s.out_u32_le(toggle_flags);             // toggleFlags
-        // save end
-        s.push_layer(0, 5);
-        // fill in headers
-        try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        if (self.can_send_fastpath_input)
+        {
+            try s.check_rem(3);
+            s.out_u8(1 << 2);                   // fpInputHeader, 1 event
+            s.out_u8(3);                        // length1
+            var eventHeader: u8 = c.FASTPATH_INPUT_EVENT_SYNC << 5;
+            if ((toggle_flags & c.TS_SYNC_SCROLL_LOCK) != 0)
+                eventHeader |= c.FASTPATH_INPUT_SYNC_SCROLL_LOCK;
+            if ((toggle_flags & c.TS_SYNC_NUM_LOCK) != 0)
+                eventHeader |= c.FASTPATH_INPUT_SYNC_NUM_LOCK;
+            if ((toggle_flags & c.TS_SYNC_CAPS_LOCK) != 0)
+                eventHeader |= c.FASTPATH_INPUT_SYNC_CAPS_LOCK;
+            if ((toggle_flags & c.TS_SYNC_KANA_LOCK) != 0)
+                eventHeader |= c.FASTPATH_INPUT_SYNC_KANA_LOCK;
+            s.out_u8(eventHeader);              // eventHeader
+        }
+        else
+        {
+            try s.check_rem(7 + 8 + 18 + 16);
+            s.push_layer(7, 0);                 // iso
+            s.push_layer(8, 1);                 // mcs
+            // sec todo
+            s.push_layer(18, 2);                // rdp
+            // TS_INPUT_PDU_DATA
+            s.out_u16_le(1);                    // numEvents
+            s.out_u8_skip(2);                   // pad2Octets
+            // slowPathInputEvents
+            s.out_u8_skip(4);                   // eventTime
+            s.out_u16_le(c.INPUT_EVENT_SYNC);   // messageType
+            s.out_u8_skip(2);                   // pad2Octets
+            s.out_u32_le(toggle_flags);         // toggleFlags
+            // save end
+            s.push_layer(0, 5);
+            // fill in headers
+            try self.out_headers(s, c.PDUTYPE2_INPUT, 0, 1, 2, 5);
+        }
         // send
         const rv = try self.priv.send_slice_to_server(s.get_out_slice());
         try c_int_to_error(rv);

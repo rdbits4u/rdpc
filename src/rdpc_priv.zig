@@ -4,7 +4,7 @@ const hexdump = @import("hexdump");
 const rdpc_msg = @import("rdpc_msg.zig");
 const rdpc_gcc = @import("rdpc_gcc.zig");
 const rdpc_caps = @import("rdpc_caps.zig");
-const c = @cImport(
+pub const c = @cImport(
 {
     @cInclude("librdpc.h");
 });
@@ -63,8 +63,8 @@ pub const rdpc_priv_t = extern struct
             const alloc_buf = try std.fmt.allocPrint(self.allocator.*,
                     fmt, args);
             defer self.allocator.free(alloc_buf);
-            const alloc1_buf = try std.fmt.allocPrintZ(self.allocator.*,
-                    "rdpc:{s}:{s}", .{src.fn_name, alloc_buf});
+            const alloc1_buf = try std.fmt.allocPrint(self.allocator.*,
+                    "rdpc:{s}:{s}\x00", .{src.fn_name, alloc_buf});
             defer self.allocator.free(alloc1_buf);
             _ = alog_msg(&self.rdpc, alloc1_buf.ptr);
         }

@@ -1,10 +1,8 @@
 const std = @import("std");
 const parse = @import("parse");
+const rdpc_priv = @import("rdpc_priv.zig");
 const rdpc_msg = @import("rdpc_msg.zig");
-const c = @cImport(
-{
-    @cInclude("librdpc.h");
-});
+const c = rdpc_priv.c;
 
 const get_struct_bytes = rdpc_msg.get_struct_bytes;
 const MsgError = rdpc_msg.MsgError;

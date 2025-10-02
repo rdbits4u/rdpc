@@ -1,9 +1,6 @@
 const std = @import("std");
 const rdpc_priv = @import("rdpc_priv.zig");
-const c = @cImport(
-{
-    @cInclude("librdpc.h");
-});
+const c = rdpc_priv.c;
 
 var g_allocator: std.mem.Allocator = std.heap.c_allocator;
 

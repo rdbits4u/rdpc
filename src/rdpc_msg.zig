@@ -5,10 +5,7 @@ const strings = @import("strings");
 const rdpc_priv = @import("rdpc_priv.zig");
 const rdpc_gcc = @import("rdpc_gcc.zig");
 const rdpc_caps = @import("rdpc_caps.zig");
-const c = @cImport(
-{
-    @cInclude("librdpc.h");
-});
+const c = rdpc_priv.c;
 
 pub const MsgError = error
 {
@@ -1888,21 +1885,22 @@ pub fn init_client_info_defaults(msg: *rdpc_msg_t,
             c.INFO_DISABLECTRLALTDEL |
             c.INFO_UNICODE |
             c.INFO_MAXIMIZESHELL;
-    var u32_array = std.ArrayList(u32).init(msg.allocator.*);
-    defer u32_array.deinit();
-    try strings.utf8_to_utf16Z_as_u8(&u32_array,
+    var u32_array = try std.ArrayListUnmanaged(u32).initCapacity(
+            msg.allocator.*, 32);
+    defer u32_array.deinit(msg.allocator.*);
+    try strings.utf8_to_utf16Z_as_u8(msg.allocator, &u32_array,
             std.mem.sliceTo(&settings.domain, 0),
             &client_info.Domain, &client_info.cbDomain);
-    try strings.utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(msg.allocator, &u32_array,
             std.mem.sliceTo(&settings.username, 0),
             &client_info.UserName, &client_info.cbUserName);
-    try strings.utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(msg.allocator, &u32_array,
             std.mem.sliceTo(&settings.password, 0),
             &client_info.Password, &client_info.cbPassword);
-    try strings.utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(msg.allocator, &u32_array,
             std.mem.sliceTo(&settings.altshell, 0),
             &client_info.AlternateShell, &client_info.cbAlternateShell);
-    try strings.utf8_to_utf16Z_as_u8(&u32_array,
+    try strings.utf8_to_utf16Z_as_u8(msg.allocator, &u32_array,
             std.mem.sliceTo(&settings.workingdir, 0),
             &client_info.WorkingDir, &client_info.cbWorkingDir);
     if (client_info.cbPassword > 0)

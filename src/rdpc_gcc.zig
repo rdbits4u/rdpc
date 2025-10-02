@@ -3,10 +3,7 @@ const parse = @import("parse");
 const strings = @import("strings");
 const rdpc_priv = @import("rdpc_priv.zig");
 const rdpc_msg = @import("rdpc_msg.zig");
-const c = @cImport(
-{
-    @cInclude("librdpc.h");
-});
+const c = rdpc_priv.c;
 
 const get_struct_bytes = rdpc_msg.get_struct_bytes;
 const MsgError = rdpc_msg.MsgError;
@@ -63,11 +60,12 @@ pub fn init_gcc_defaults(msg: *rdpc_msg.rdpc_msg_t,
     core.highColorDepth = @intCast(settings.bpp);
     core.connectionType = c.CONNECTION_TYPE_LAN;
 
-    var u32_array = std.ArrayList(u32).init(msg.allocator.*);
-    defer u32_array.deinit();
+    var u32_array = try std.ArrayListUnmanaged(u32).initCapacity(
+            msg.allocator.*, 32);
+    defer u32_array.deinit(msg.allocator.*);
     var len_u16: u16 = 0;
-    try strings.utf8_to_utf16Z_as_u8(&u32_array, &settings.clientname,
-            &core.clientName, &len_u16);
+    try strings.utf8_to_utf16Z_as_u8(msg.allocator, &u32_array,
+            &settings.clientname, &core.clientName, &len_u16);
 
     // CS_SEC
     sec.header.type = c.CS_SECURITY;        // 0xC002;

@@ -1502,11 +1502,11 @@ pub const rdpc_msg_t = struct
             s.out_u8(4);                        // length1
             var eventHeader: u8 = c.FASTPATH_INPUT_EVENT_SCANCODE << 5;
             if ((keyboard_flags & c.KBDFLAGS_RELEASE) != 0)
-                eventHeader |= c.FASTPATH_INPUT_KBDFLAGS_RELEASE;
+                eventHeader |= @as(u8, c.FASTPATH_INPUT_KBDFLAGS_RELEASE);
             if ((keyboard_flags & c.KBDFLAGS_EXTENDED) != 0)
-                eventHeader |= c.FASTPATH_INPUT_KBDFLAGS_EXTENDED;
+                eventHeader |= @as(u8, c.FASTPATH_INPUT_KBDFLAGS_EXTENDED);
             if ((keyboard_flags & c.KBDFLAGS_EXTENDED1) != 0)
-                eventHeader |= c.FASTPATH_INPUT_KBDFLAGS_EXTENDED1;
+                eventHeader |= @as(u8, c.FASTPATH_INPUT_KBDFLAGS_EXTENDED1);
             s.out_u8(eventHeader);              // eventHeader
             s.out_u8(@truncate(key_code));      // keyCode
         }
@@ -1550,13 +1550,13 @@ pub const rdpc_msg_t = struct
             s.out_u8(3);                        // length1
             var eventHeader: u8 = c.FASTPATH_INPUT_EVENT_SYNC << 5;
             if ((toggle_flags & c.TS_SYNC_SCROLL_LOCK) != 0)
-                eventHeader |= c.FASTPATH_INPUT_SYNC_SCROLL_LOCK;
+                eventHeader |= @as(u8, c.FASTPATH_INPUT_SYNC_SCROLL_LOCK);
             if ((toggle_flags & c.TS_SYNC_NUM_LOCK) != 0)
-                eventHeader |= c.FASTPATH_INPUT_SYNC_NUM_LOCK;
+                eventHeader |= @as(u8, c.FASTPATH_INPUT_SYNC_NUM_LOCK);
             if ((toggle_flags & c.TS_SYNC_CAPS_LOCK) != 0)
-                eventHeader |= c.FASTPATH_INPUT_SYNC_CAPS_LOCK;
+                eventHeader |= @as(u8, c.FASTPATH_INPUT_SYNC_CAPS_LOCK);
             if ((toggle_flags & c.TS_SYNC_KANA_LOCK) != 0)
-                eventHeader |= c.FASTPATH_INPUT_SYNC_KANA_LOCK;
+                eventHeader |= @as(u8, c.FASTPATH_INPUT_SYNC_KANA_LOCK);
             s.out_u8(eventHeader);              // eventHeader
         }
         else

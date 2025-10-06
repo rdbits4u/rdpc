@@ -29,6 +29,8 @@ struct rdpc_settings_t
     int keyboard_layout;
     int width;
     int height;
+    int workarea;
+    int percent_screen;
     int bpp;
     int dpix;
     int dpiy;

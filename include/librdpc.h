@@ -16,6 +16,13 @@
 #define LIBRDPC_ERROR_NOT_CONNECTED         -4
 #define LIBRDPC_ERROR_PARAM                 -5
 #define LIBRDPC_ERROR_CHANNEL               -6
+#define LIBRDPC_ERROR_LOG                   -7
+#define LIBRDPC_ERROR_SEND_TO_SERVER        -8
+#define LIBRDPC_ERROR_BITMAP_UPDATE         -9
+#define LIBRDPC_ERROR_SET_SURFACE_BITS      -10
+#define LIBRDPC_ERROR_FRAME_MARKER          -11
+#define LIBRDPC_ERROR_POINTER_UPDATE        -12
+#define LIBRDPC_ERROR_POINTER_CACHED        -13
 #define LIBRDPC_ERROR_OTHER                 -16
 
 struct rdpc_settings_t
